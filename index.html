@@ -63,7 +63,6 @@
         .wide-container { max-width: 1100px; }
         h2 { text-align: center; color: var(--primary); margin-top: 0; margin-bottom: 12px; }
         
-        /* 优化后的两行式实验条件徽章 */
         .lt-badge-container {
             background: #eef2ff;
             border: 1px solid #c7d2fe;
@@ -259,7 +258,6 @@
 
     <div id="dash-summary" style="text-align:center; padding:10px; color:#64748b;">点击“刷新本堂数据”加载最新学生提交结果...</div>
 
-    <!-- 教师端 3 张折线趋势大图容器 -->
     <div class="dash-grid" id="dash-charts" style="display:none;">
         <div class="dash-card">
             <div class="dash-title"><span>📈 班级均值折线图: 提前期 LT = 0</span></div>
@@ -312,27 +310,28 @@ const MIN_DEMAND = 1;
 const MAX_DEMAND = 300;
 const MEAN_DEMAND = 150; 
 const PRICE = 12;
-const COST_HIGH_MARGIN = 3; // q*=225
-const COST_LOW_MARGIN  = 9; // q*=75
+const COST_HIGH_MARGIN = 3; 
+const COST_LOW_MARGIN  = 9; 
 const PRACTICE_PERIODS = 5;
 const FORMAL_PERIODS_PER_STAGE = 40; 
 
 let supabaseClient = null;
 function initSupabase() {
-    const url = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
-    const key = localStorage.getItem('sb_key') || DEFAULT_SUPABASE_KEY;
-    document.getElementById('cfg-url').value = url.startsWith('http') ? url : '';
-    document.getElementById('cfg-key').value = key;
-    if (url && url.startsWith('http') && key && key.length > 15 && window.supabase) {
-        supabaseClient = window.supabase.createClient(url, key);
-    }
+    try {
+        const url = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
+        const key = localStorage.getItem('sb_key') || DEFAULT_SUPABASE_KEY;
+        const urlInput = document.getElementById('cfg-url');
+        const keyInput = document.getElementById('cfg-key');
+        if(urlInput) urlInput.value = url.startsWith('http') ? url : '';
+        if(keyInput) keyInput.value = key;
+        if (url && url.startsWith('http') && key && key.length > 15 && window.supabase) {
+            supabaseClient = window.supabase.createClient(url, key);
+        }
+    } catch(e) { console.error("Supabase init error:", e); }
 }
-initSupabase();
 
 const urlParams = new URLSearchParams(window.location.search);
 let currentSessionId = urlParams.get('session') || localStorage.getItem('exp_session_id') || DEFAULT_SESSION_ID;
-document.getElementById('topSessionBadge').innerText = currentSessionId;
-document.getElementById('t-session-input').value = currentSessionId;
 
 let studentInfo = { nickname: '', gender: '', age: null };
 let expConfig = { leadTime: 0, orderSeq: 'HL', stageCosts: [3, 9] };
@@ -388,8 +387,9 @@ async function assignBalancedCondition() {
     expConfig.stageCosts = seq === 'HL' ? [COST_HIGH_MARGIN, COST_LOW_MARGIN] : [COST_LOW_MARGIN, COST_HIGH_MARGIN];
 }
 
-// ================= 步骤 1：欢迎与基本信息页（已删除保密提示） =================
+// ================= 步骤 1：欢迎与基本信息页 =================
 function renderWelcomePage() {
+    if (!studentApp) return;
     studentApp.innerHTML = `
         <h2>📦 欢迎参加商业库存决策研究</h2>
         <p style="color:#64748b; text-align:center; line-height:1.6; margin-bottom:22px;">
@@ -414,23 +414,25 @@ function renderWelcomePage() {
         <button class="btn-full" id="btnStartExp">下一步：阅读详细操作说明 ➔</button>
     `;
 
-    document.getElementById('btnStartExp').onclick = async () => {
-        const nick = document.getElementById('inp-nickname').value.trim();
-        const genderEl = document.querySelector('input[name="gender"]:checked');
-        const ageVal = parseInt(document.getElementById('inp-age').value, 10);
-        const errDiv = document.getElementById('welcome-err');
+    const startBtn = document.getElementById('btnStartExp');
+    if(startBtn) {
+        startBtn.onclick = async () => {
+            const nick = document.getElementById('inp-nickname').value.trim();
+            const genderEl = document.querySelector('input[name="gender"]:checked');
+            const ageVal = parseInt(document.getElementById('inp-age').value, 10);
+            const errDiv = document.getElementById('welcome-err');
 
-        if (!nick) { errDiv.innerText = "请填写您的课堂昵称！"; return; }
-        if (!genderEl) { errDiv.innerText = "请选择您的性别！"; return; }
-        if (isNaN(ageVal) || ageVal <= 0 || ageVal > 80) { errDiv.innerText = "请输入正确的年龄！"; return; }
+            if (!nick) { errDiv.innerText = "请填写您的课堂昵称！"; return; }
+            if (!genderEl) { errDiv.innerText = "请选择您的性别！"; return; }
+            if (isNaN(ageVal) || ageVal <= 0 || ageVal > 80) { errDiv.innerText = "请输入正确的年龄！"; return; }
 
-        studentInfo = { nickname: nick, gender: genderEl.value, age: ageVal };
-        const btn = document.getElementById('btnStartExp');
-        btn.disabled = true;
-        btn.innerText = "正在为您分配实验场景...";
-        await assignBalancedCondition();
-        renderInstructions();
-    };
+            studentInfo = { nickname: nick, gender: genderEl.value, age: ageVal };
+            startBtn.disabled = true;
+            startBtn.innerText = "正在为您分配实验场景...";
+            await assignBalancedCondition();
+            renderInstructions();
+        };
+    }
 }
 
 // ================= 步骤 2：规则说明 =================
@@ -444,7 +446,6 @@ function renderInstructions() {
 
     studentApp.innerHTML = `
         <h2>📖 报童库存决策任务说明</h2>
-        <!-- 优化后的两行式专属条件徽章 -->
         <div class="lt-badge-container">
             <div class="lt-badge-line1">📌 您的专属实验条件：</div>
             <div class="lt-badge-line2">提前期 (LT) = ${LT} 期</div>
@@ -492,8 +493,12 @@ function renderInstructions() {
     `;
 
     const showPage = (n) => {
-        [1, 2, 3].forEach(i => document.getElementById(`inst-p${i}`).style.display = (i === n ? 'block' : 'none'));
-        document.getElementById('stepIndicator').innerText = `阅读进度：${n} / 3`;
+        [1, 2, 3].forEach(i => {
+            const el = document.getElementById(`inst-p${i}`);
+            if(el) el.style.display = (i === n ? 'block' : 'none');
+        });
+        const indicator = document.getElementById('stepIndicator');
+        if(indicator) indicator.innerText = `阅读进度：${n} / 3`;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     document.getElementById('to-p2').onclick = () => showPage(2);
@@ -505,11 +510,15 @@ function renderInstructions() {
     const btnQuiz = document.getElementById('btnEnterQuiz');
     const timer = setInterval(() => {
         wait--;
-        if (wait > 0) btnQuiz.innerText = `请仔细阅读说明... (还剩 ${wait} 秒)`;
-        else { clearInterval(timer); btnQuiz.disabled = false; btnQuiz.innerText = "✅ 我已明白规则，进入理解度测试"; }
+        if (wait > 0) {
+            if(btnQuiz) btnQuiz.innerText = `请仔细阅读说明... (还剩 ${wait} 秒)`;
+        } else { 
+            clearInterval(timer); 
+            if(btnQuiz) { btnQuiz.disabled = false; btnQuiz.innerText = "✅ 我已明白规则，进入理解度测试"; }
+        }
     }, 1000);
 
-    btnQuiz.onclick = () => renderComprehensionQuiz();
+    if(btnQuiz) btnQuiz.onclick = () => renderComprehensionQuiz();
 }
 
 // ================= 步骤 3：理解度测试 =================
@@ -589,7 +598,7 @@ function renderComprehensionQuiz() {
     };
 }
 
-// ================= 步骤 4 & 5：决策主界面（无线索、无快捷按钮、纯净输入） =================
+// ================= 步骤 4 & 5：决策主界面 =================
 function renderGameStage() {
     const LT = expConfig.leadTime;
     const isPractice = (currentStage === 0);
@@ -600,18 +609,12 @@ function renderGameStage() {
     if (currentStage === 1) { badgeClass = 'stage-formal-1'; badgeText = `正式实验 · 第一阶段 (共40期)`; }
     if (currentStage === 2) { badgeClass = 'stage-formal-2'; badgeText = `正式实验 · 第二阶段 (共40期)`; }
 
-    let currentArrival = MEAN_DEMAND;
-    if (LT > 0) {
-        currentArrival = (currentPeriod <= LT) ? MEAN_DEMAND : stageOrders[currentPeriod - LT - 1];
-    }
-
     studentApp.innerHTML = `
         <div style="text-align:center;">
             <span class="stage-badge ${badgeClass}">${badgeText}</span><br>
             <div class="period-counter">第 ${currentPeriod} / ${maxPeriods} 期</div>
         </div>
 
-        <!-- 极简决策顶部框：不含任何低毛利提示语 -->
         <div class="cost-price-bar">
             <span>📌 提前期: ${LT} 期</span>
             <span>💰 单位成本: <strong>${unitCost} 元</strong></span>
@@ -619,7 +622,6 @@ function renderGameStage() {
             <span style="width:100%; font-weight:normal; font-size:0.88rem; color:#475569;">市场需求：1 ~ 300 均匀分布</span>
         </div>
 
-        <!-- 决策输入区：彻底删除了所有备选数字按钮，只留纯白输入框 -->
         <div id="decision-zone" class="order-input-zone">
             <div style="font-weight:bold; color:var(--primary); margin-bottom:6px;">
                 请输入您本期的订货量（${MIN_DEMAND} ~ ${MAX_DEMAND} 整数）：
@@ -702,7 +704,6 @@ function submitPeriodOrder(unitCost, maxPeriods) {
     if (currentStage === 0) allPracticeData.push(record);
     else formalTrials.push(record);
 
-    // 计算当前产品截止到本期的累计总利润
     let currentStageRunningProfit = 0;
     if (currentStage === 1) {
         currentStageRunningProfit = formalTrials.filter(t => t.stage === 1).reduce((acc, t) => acc + t.profit, 0);
@@ -739,7 +740,7 @@ function submitPeriodOrder(unitCost, maxPeriods) {
         </div>
     `;
 
-    const goNext = () => {
+    document.getElementById('btnManualNext').onclick = () => {
         inFeedback = false;
         currentPeriod++;
         if (currentPeriod > maxPeriods) {
@@ -748,8 +749,6 @@ function submitPeriodOrder(unitCost, maxPeriods) {
             renderGameStage();
         }
     };
-
-    document.getElementById('btnManualNext').onclick = goNext;
 }
 
 // ================= 阶段转场与结算 =================
@@ -769,7 +768,6 @@ function handleStageComplete() {
         document.getElementById('btnMorePractice').onclick = () => { practiceRound++; currentPeriod = 1; stageOrders = []; renderGameStage(); };
         document.getElementById('btnStartStage1').onclick = () => { currentStage = 1; currentPeriod = 1; stageOrders = []; renderGameStage(); };
     } else if (currentStage === 1) {
-        // 第一阶段 40 期结束：独立展示第一阶段总收益
         stage1Profit = formalTrials.filter(t => t.stage === 1).reduce((acc, r) => acc + r.profit, 0);
 
         studentApp.innerHTML = `
@@ -786,7 +784,6 @@ function handleStageComplete() {
             renderStage2Quiz();
         };
     } else if (currentStage === 2) {
-        // 第二阶段 40 期结束：独立展示第二阶段总收益，再进入问卷
         const stage2Trials = formalTrials.slice(FORMAL_PERIODS_PER_STAGE);
         stage2Profit = stage2Trials.reduce((acc, r) => acc + r.profit, 0);
 
@@ -803,7 +800,6 @@ function handleStageComplete() {
     }
 }
 
-// 第二阶段拦截测试题
 function renderStage2Quiz() {
     const oldCost = expConfig.stageCosts[0];
     const newCost = expConfig.stageCosts[1];
@@ -839,7 +835,7 @@ function renderStage2Quiz() {
 
     document.getElementById('btnStartStage2Final').onclick = () => {
         const a1 = document.querySelector('input[name="s2_q1"]:checked');
-        const a2 = document.querySelector('input[name="s2_q2']:checked');
+        const a2 = document.querySelector('input[name="s2_q2"]:checked');
         const err = document.getElementById('s2-err');
         if (!a1 || !a2) { err.innerText = "请先完成上述两道确认题！"; return; }
         if (parseInt(a1.value, 10) !== newCost || a2.value !== 'c') {
@@ -901,7 +897,7 @@ function renderSurveyPage() {
     };
 }
 
-// ================= 个人报告页（双阶段 1~40 期上下分段折线图） =================
+// ================= 个人报告页 =================
 async function saveAndShowReport() {
     const totalProfit = formalTrials.reduce((acc, r) => acc + r.profit, 0);
     const dissocScore = Number((((8 - surveyScores.q1) + surveyScores.q2 + surveyScores.q3) / 3).toFixed(2));
@@ -946,7 +942,7 @@ async function saveAndShowReport() {
             <div style="font-size:0.95rem;">👤 ${studentInfo.nickname} &nbsp;|&nbsp; 📌 提前期: LT = ${expConfig.leadTime} 期</div>
             <div style="font-size:1.3rem; font-weight:800; color:#0369a1; margin-top:6px;">
                 📊 80期总利润：${totalProfit} 元<br>
-                <span style="font-size:0.9rem; font-weight:normal; color:#475569;">(第一阶段产品总利润: ${stage1Profit} 元 | 第二阶段产品总利润: ${stage2Profit} 元)</span>
+                <span style="font-size:0.9rem; font-weight:normal; color:#475569;">(第一阶段总利润: ${stage1Profit} 元 | 第二阶段总利润: ${stage2Profit} 元)</span>
             </div>
         </div>
 
@@ -1007,12 +1003,10 @@ function drawSingleStageCanvas(canvasId, trials, optimalVal, lineColor) {
     ctx.fillText('20', pad + plotW / 2 - 8, h - pad + 12);
     ctx.fillText('40', w - pad - 10, h - pad + 12);
 
-    // 均值 150 辅助线
     const y150 = (h - pad) - (150 / 300) * plotH;
     ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(pad, y150); ctx.lineTo(w - pad, y150); ctx.stroke();
 
-    // 理论最优解辅助线
     const yOpt = (h - pad) - (optimalVal / 300) * plotH;
     ctx.strokeStyle = '#0f172a'; ctx.setLineDash([2, 2]);
     ctx.beginPath(); ctx.moveTo(pad, yOpt); ctx.lineTo(w - pad, yOpt); ctx.stroke();
@@ -1020,7 +1014,6 @@ function drawSingleStageCanvas(canvasId, trials, optimalVal, lineColor) {
 
     if (trials.length === 0) return;
 
-    // 绘制折线
     ctx.strokeStyle = lineColor; ctx.lineWidth = 2;
     ctx.beginPath();
     trials.forEach((t, i) => {
@@ -1032,7 +1025,7 @@ function drawSingleStageCanvas(canvasId, trials, optimalVal, lineColor) {
     ctx.stroke();
 }
 
-// ================= 教师端：大屏 3 张班级均值折线图（分两段 1~40 期） =================
+// ================= 教师端：大屏 3 张班级均值折线图 =================
 document.getElementById('btnToggleTeacher').onclick = () => {
     let pwd = prompt("🔒 教师端受密码保护，请输入访问密码：");
     if (pwd === null) return;
@@ -1178,7 +1171,6 @@ function renderTeacherCanvas(canvasId, subRecs) {
         return;
     }
 
-    // 分别计算第一阶段（1~40期）和第二阶段（1~40期）的班级均值
     const s1Avgs = [];
     const s2Avgs = [];
     for (let p = 1; p <= 40; p++) {
@@ -1195,12 +1187,10 @@ function renderTeacherCanvas(canvasId, subRecs) {
         s2Avgs.push(count2 > 0 ? sum2 / count2 : null);
     }
 
-    // 获取该组多数人第一阶段和第二阶段的最优解（HL模式下：stg1=225, stg2=75；LH模式下相反）
     let highOpt = 225, lowOpt = 75;
     const sample = subRecs[0];
     if (sample && sample.order_seq === 'LH') { highOpt = 75; lowOpt = 225; }
 
-    // 绘制理论最优解虚线
     const yHighOpt = (h - pad) - (highOpt / 300) * plotH;
     const yLowOpt  = (h - pad) - (lowOpt / 300) * plotH;
     ctx.strokeStyle = '#0f172a'; ctx.setLineDash([2, 2]);
@@ -1208,7 +1198,6 @@ function renderTeacherCanvas(canvasId, subRecs) {
     ctx.beginPath(); ctx.moveTo(pad + plotW/2, yLowOpt); ctx.lineTo(w - pad, yLowOpt); ctx.stroke();
     ctx.setLineDash([]);
 
-    // 画第一阶段均值（蓝色）
     ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 2.5;
     for (let i = 0; i < 39; i++) {
         const y1 = s1Avgs[i], y2 = s1Avgs[i+1];
@@ -1219,7 +1208,6 @@ function renderTeacherCanvas(canvasId, subRecs) {
         ctx.stroke();
     }
 
-    // 画第二阶段均值（紫色）
     ctx.strokeStyle = '#8b5cf6'; ctx.lineWidth = 2.5;
     for (let i = 0; i < 39; i++) {
         const y1 = s2Avgs[i], y2 = s2Avgs[i+1];
@@ -1231,7 +1219,6 @@ function renderTeacherCanvas(canvasId, subRecs) {
     }
 }
 
-// 导出 CSV 长表
 function exportTrialsToCSV(records, filename) {
     if (!records || records.length === 0) { alert("暂无数据可导出！"); return; }
     const headers = [
@@ -1271,7 +1258,12 @@ document.getElementById('btnExportAll').onclick = async () => {
     exportTrialsToCSV(allData, `Newsvendor_All_Sessions_${new Date().toISOString().slice(0,10)}.csv`);
 };
 
-renderWelcomePage();
+// 安全初始化入口
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderWelcomePage);
+} else {
+    renderWelcomePage();
+}
 </script>
 </body>
 </html>
