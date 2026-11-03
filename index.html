@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>库存决策行为实验与课堂实时看板</title>
+    <!-- 引入 Supabase 官方客户端 SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary: #1e3a5f;
+            --accent: #0ea5e9;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #e11d48;
+            --bg: #f8fafc;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 15px;
+            color: #0f172a;
+        }
+        .top-bar {
+            max-width: 900px;
+            margin: 0 auto 12px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+        .session-tag {
+            background: #e2e8f0;
+            color: #334155;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .teacher-toggle-btn {
+            background: transparent;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            padding: 4px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: 0.2s;
+        }
+        .teacher-toggle-btn:hover { background: #e2e8f0; color: #0f172a; }
+
+        .card-container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+            padding: 26px 28px;
+            border: 1px solid #e2e8f0;
+        }
+        .wide-container { max-width: 1100px; }
+        h2 { text-align: center; color: var(--primary); margin-top: 0; margin-bottom: 12px; }
+        .lt-badge {
+            text-align: center;
+            font-size: 1.15rem;
+            font-weight: bold;
+            background: #eef2ff;
+            display: block;
+            width: 100%;
+            padding: 8px 0;
+            border-radius: 40px;
+            margin: 10px 0 16px 0;
+            color: var(--primary);
+            border: 1px solid #c7d2fe;
+        }
+        .section { margin: 16px 0; line-height: 1.6; color: #1e293b; }
+        .reward-box { background: #fffbeb; border: 1px solid #fde68a; padding: 14px 16px; border-radius: 16px; margin: 16px 0; color: #92400e; line-height: 1.6; }
+        .alert-box { background: #fef2f2; border: 1px solid #fca5a5; padding: 14px 16px; border-radius: 16px; margin: 16px 0; color: #991b1b; line-height: 1.6; }
+        .sales-note { background: #f0fdfa; border-left: 4px solid #0d9488; padding: 12px 16px; margin: 14px 0; font-size: 0.95rem; color: #0f766e; }
+        .example { background: #f1f5f9; padding: 12px 16px; border-radius: 14px; font-weight: bold; text-align: center; margin: 14px 0; color: #0f172a; }
+
+        .form-group { margin-bottom: 18px; text-align: left; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #1e293b; }
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 12px;
+            font-size: 1rem;
+            outline: none;
+            transition: 0.2s;
+        }
+        .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14,165,233,0.15); }
+        .radio-group { display: flex; gap: 24px; padding: 6px 0; }
+        .radio-group label { font-weight: normal; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+        .nav-buttons { display: flex; justify-content: center; gap: 14px; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 18px; }
+        .nav-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 26px;
+            border-radius: 40px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .nav-btn:hover { opacity: 0.92; transform: translateY(-1px); }
+        .nav-btn.secondary { background: #94a3b8; }
+        .btn-full {
+            background: var(--success);
+            color: white;
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: 0.2s;
+        }
+        .btn-full:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        .stage-badge { font-size: 0.9rem; font-weight: bold; padding: 5px 14px; border-radius: 20px; display: inline-block; margin-bottom: 8px; }
+        .stage-practice { background: #fef08a; color: #854d0e; }
+        .stage-formal-1 { background: #dbeafe; color: #1e40af; }
+        .stage-formal-2 { background: #f3e8ff; color: #6b21a8; }
+        .period-counter { font-size: 1.25rem; font-weight: bold; margin-bottom: 12px; color: var(--primary); background: #eef2ff; display: inline-block; padding: 6px 22px; border-radius: 40px; }
+        .cost-price-bar {
+            background: #f1f5f9;
+            color: #1e293b;
+            font-size: 1.05rem;
+            font-weight: bold;
+            padding: 12px;
+            border-radius: 14px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 10px;
+            border: 1px solid #cbd5e1;
+        }
+        .dist-box {
+            background: linear-gradient(135deg, #f8fafc 0%, #e0f2fe 100%);
+            border: 2px solid #bae6fd;
+            border-radius: 20px;
+            padding: 18px;
+            margin-bottom: 18px;
+            text-align: center;
+        }
+        .dist-title { font-size: 0.95rem; color: #0369a1; font-weight: 600; margin-bottom: 6px; }
+        .dist-range { font-size: 1.7rem; font-weight: 800; color: #0f172a; letter-spacing: 0.5px; }
+        .dist-sub { font-size: 0.85rem; color: #475569; margin-top: 4px; }
+
+        .order-input-zone {
+            background: #ffffff;
+            border: 2px solid #cbd5e1;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .order-num-input-center {
+            width: 180px;
+            font-size: 2.2rem;
+            font-weight: 800;
+            text-align: center;
+            color: var(--primary);
+            border: 2.5px solid var(--accent);
+            border-radius: 16px;
+            padding: 8px;
+            outline: none;
+            margin: 10px auto;
+        }
+        .order-num-input-center:focus { box-shadow: 0 0 0 4px rgba(14,165,233,0.2); }
+
+        .feedback-card {
+            background: #fffbeb;
+            border: 2px solid #fcd34d;
+            border-radius: 20px;
+            padding: 18px;
+            margin-bottom: 16px;
+            animation: fadeIn 0.2s ease;
+        }
+        .fb-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            text-align: center;
+        }
+        .fb-item { background: white; padding: 10px; border-radius: 12px; border: 1px solid #fde68a; }
+        .fb-label { font-size: 0.85rem; color: #64748b; }
+        .fb-val { font-size: 1.35rem; font-weight: 800; color: #0f172a; margin-top: 2px; }
+
+        .quiz-item { text-align: left; background: #f8fafc; padding: 15px; border-radius: 14px; margin-bottom: 14px; border: 1px solid #e2e8f0; }
+        .quiz-item p { margin: 0 0 10px 0; font-weight: bold; color: #0f172a; line-height: 1.4; }
+        .quiz-label { display: block; margin-bottom: 8px; cursor: pointer; color: #334155; padding: 4px 0; }
+        .likert-scale { display: flex; justify-content: space-between; gap: 6px; margin-top: 12px; }
+        .likert-btn {
+            flex: 1;
+            padding: 10px 0;
+            text-align: center;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 10px;
+            background: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+        .likert-btn.selected { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; margin-top: 18px; }
+        .dash-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 18px; }
+        .dash-title { font-weight: 700; color: var(--primary); margin-bottom: 12px; font-size: 1.05rem; display: flex; justify-content: space-between; align-items: center; }
+        table.data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 10px; }
+        table.data-table th, table.data-table td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: center; }
+        table.data-table th { background: #f1f5f9; color: #1e293b; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <div>当前课堂批次: <span class="session-tag" id="topSessionBadge">加载中...</span></div>
+    <button class="teacher-toggle-btn" id="btnToggleTeacher">👨‍🏫 教师端 / 课堂看板</button>
+</div>
+
+<!-- ==================== 学生端主容器 ==================== -->
+<div id="student-app" class="card-container"></div>
+
+<!-- ==================== 教师端主容器 ==================== -->
+<div id="teacher-app" class="card-container wide-container" style="display:none;">
+    <h2>📊 报童库存决策实验 · 课堂实时看板</h2>
+    
+    <div style="background:#f1f5f9; padding:16px; border-radius:16px; margin-bottom:18px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <strong>当前课堂批次号:</strong>
+            <input type="text" id="t-session-input" class="form-input" style="width:180px; padding:6px 10px;" value="2026_BI_Class1">
+            <button class="nav-btn" style="padding:8px 16px; font-size:0.9rem;" id="btnSetSession">🔄 切换/开启新课堂</button>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="nav-btn" style="padding:8px 16px; font-size:0.9rem; background:#10b981;" id="btnRefreshDash">⚡ 刷新本堂数据</button>
+            <button class="nav-btn" style="padding:8px 16px; font-size:0.9rem; background:#6366f1;" id="btnExportCurrent">📥 导出本堂 CSV</button>
+            <button class="nav-btn" style="padding:8px 16px; font-size:0.9rem; background:#0f172a;" id="btnExportAll">📦 导出历史全量科研 CSV</button>
+            <button class="nav-btn secondary" style="padding:8px 14px; font-size:0.9rem;" id="btnConfigDb">⚙️ 数据库连接设置</button>
+        </div>
+    </div>
+
+    <div id="db-config-panel" style="display:none; background:#fffbeb; border:1px solid #fde68a; padding:16px; border-radius:16px; margin-bottom:18px;">
+        <h4 style="margin-top:0; color:#92400e;">🔑 Supabase 云数据库连接配置</h4>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+                <label style="font-size:0.85rem; font-weight:bold;">Supabase Project URL:</label>
+                <input type="text" id="cfg-url" class="form-input" placeholder="https://xxxx.supabase.co">
+            </div>
+            <div>
+                <label style="font-size:0.85rem; font-weight:bold;">Supabase Publishable Key:</label>
+                <input type="text" id="cfg-key" class="form-input" placeholder="sb_publishable_...">
+            </div>
+        </div>
+        <button class="nav-btn" style="margin-top:12px; padding:8px 20px;" id="btnSaveDbConfig">✅ 保存并连接数据库</button>
+    </div>
+
+    <div id="dash-summary" style="text-align:center; padding:10px; color:#64748b;">点击“刷新本堂数据”加载最新学生提交结果...</div>
+
+    <!-- 教师端 3 张折线趋势大图容器 -->
+    <div class="dash-grid" id="dash-charts" style="display:none;">
+        <div class="dash-card">
+            <div class="dash-title"><span>📈 班级均值折线图: 提前期 LT = 0</span></div>
+            <canvas id="canvas-lt0" width="340" height="200" style="width:100%; height:200px; background:white; border-radius:10px; border:1px solid #cbd5e1;"></canvas>
+            <p style="font-size:0.78rem; color:#64748b; margin:6px 0 0 0;">蓝线=高利润组(q*=225), 红线=低利润组(q*=75), 黑虚线=两档最优解。</p>
+        </div>
+        <div class="dash-card">
+            <div class="dash-title"><span>📈 班级均值折线图: 提前期 LT = 1</span></div>
+            <canvas id="canvas-lt1" width="340" height="200" style="width:100%; height:200px; background:white; border-radius:10px; border:1px solid #cbd5e1;"></canvas>
+            <p style="font-size:0.78rem; color:#64748b; margin:6px 0 0 0;">横轴：正式决策期数 (1 ~ 40 期)</p>
+        </div>
+        <div class="dash-card">
+            <div class="dash-title"><span>📈 班级均值折线图: 提前期 LT = 2</span></div>
+            <canvas id="canvas-lt2" width="340" height="200" style="width:100%; height:200px; background:white; border-radius:10px; border:1px solid #cbd5e1;"></canvas>
+            <p style="font-size:0.78rem; color:#64748b; margin:6px 0 0 0;">纵轴：订货量 (0 ~ 300 范围)</p>
+        </div>
+    </div>
+
+    <div style="margin-top:24px;">
+        <h3 style="color:var(--primary); margin-bottom:8px;">🏆 本堂课已完成学生列表（按总利润排序）</h3>
+        <div style="overflow-x:auto;">
+            <table class="data-table" id="student-table">
+                <thead>
+                    <tr>
+                        <th>排名</th>
+                        <th>昵称</th>
+                        <th>提前期 (LT)</th>
+                        <th>阶段顺序</th>
+                        <th>第一阶段总利润</th>
+                        <th>第二阶段总利润</th>
+                        <th>80期总利润</th>
+                        <th>需求追逐系数 r</th>
+                        <th>因果解离得分 (1-7)</th>
+                    </tr>
+                </thead>
+                <tbody id="student-tbody">
+                    <tr><td colspan="9" style="color:#94a3b8;">暂无数据</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const DEFAULT_SUPABASE_URL = "https://hndblcpgxlnprlqlhokm.supabase.co"; 
+const DEFAULT_SUPABASE_KEY = "sb_publishable_6hsdhdffzHAIGrvEa4Xayw_1x6a-MGB";
+const DEFAULT_SESSION_ID   = "2026_BI_Class1"; 
+
+const MIN_DEMAND = 1;
+const MAX_DEMAND = 300;
+const MEAN_DEMAND = 150; 
+const PRICE = 12;
+const COST_HIGH_MARGIN = 3; // q*=225
+const COST_LOW_MARGIN  = 9; // q*=75
+const PRACTICE_PERIODS = 5;
+const FORMAL_PERIODS_PER_STAGE = 40; 
+
+let supabaseClient = null;
+function initSupabase() {
+    const url = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
+    const key = localStorage.getItem('sb_key') || DEFAULT_SUPABASE_KEY;
+    document.getElementById('cfg-url').value = url.startsWith('http') ? url : '';
+    document.getElementById('cfg-key').value = key;
+    if (url && url.startsWith('http') && key && key.length > 15 && window.supabase) {
+        supabaseClient = window.supabase.createClient(url, key);
+    }
+}
+initSupabase();
+
+const urlParams = new URLSearchParams(window.location.search);
+let currentSessionId = urlParams.get('session') || localStorage.getItem('exp_session_id') || DEFAULT_SESSION_ID;
+document.getElementById('topSessionBadge').innerText = currentSessionId;
+document.getElementById('t-session-input').value = currentSessionId;
+
+let studentInfo = { nickname: '', gender: '', age: null };
+let expConfig = { leadTime: 0, orderSeq: 'HL', stageCosts: [3, 9] };
+
+let currentStage = 0;      
+let currentPeriod = 1;
+let practiceRound = 1;
+let allPracticeData = [];
+let stageOrders = [];      
+let formalTrials = [];     
+let periodStartTime = null;
+let inFeedback = false;
+
+let quizFailCount = 0;
+let invalidRtCount = 0;
+let surveyScores = { q1: null, q2: null, q3: null };
+
+// 记录各阶段独立总利润
+let stage1Profit = 0;
+let stage2Profit = 0;
+
+const studentApp = document.getElementById('student-app');
+
+function generateUniformDemand() {
+    return Math.floor(Math.random() * (MAX_DEMAND - MIN_DEMAND + 1)) + MIN_DEMAND;
+}
+function calcProfit(arrival, demand, unitCost) {
+    const sales = Math.min(arrival, demand);
+    return (sales * PRICE) - (arrival * unitCost);
+}
+
+async function assignBalancedCondition() {
+    let lt = Math.floor(Math.random() * 3);
+    let seq = Math.random() < 0.5 ? 'HL' : 'LH';
+    if (supabaseClient) {
+        try {
+            const { data } = await supabaseClient.from('newsvendor_experiments').select('lead_time, order_seq').eq('session_id', currentSessionId);
+            if (data && data.length > 0) {
+                const counts = { 0: 0, 1: 0, 2: 0 };
+                const seqCounts = { HL: 0, LH: 0 };
+                data.forEach(r => {
+                    if (counts[r.lead_time] !== undefined) counts[r.lead_time]++;
+                    if (seqCounts[r.order_seq] !== undefined) seqCounts[r.order_seq]++;
+                });
+                const minLt = Math.min(counts[0], counts[1], counts[2]);
+                const cands = [0, 1, 2].filter(k => counts[k] === minLt);
+                lt = cands[Math.floor(Math.random() * cands.length)];
+                seq = seqCounts.HL <= seqCounts.LH ? 'HL' : 'LH';
+            }
+        } catch (e) {}
+    }
+    expConfig.leadTime = lt;
+    expConfig.orderSeq = seq;
+    expConfig.stageCosts = seq === 'HL' ? [COST_HIGH_MARGIN, COST_LOW_MARGIN] : [COST_LOW_MARGIN, COST_HIGH_MARGIN];
+}
+
+// ================= 步骤 1：欢迎与基本信息页 =================
+function renderWelcomePage() {
+    studentApp.innerHTML = `
+        <h2>📦 欢迎参加商业库存决策研究</h2>
+        <p style="color:#64748b; text-align:center; line-height:1.6; margin-bottom:22px;">
+            感谢您的参与！在接下来的环节中，您将扮演一名零售商户，根据市场需求分布情况做出每期的订货决策。<br>
+        </p>
+        <div class="form-group">
+            <label>* 1. 您的课堂昵称（可填姓名或任意代号，用于大屏展示）：</label>
+            <input type="text" id="inp-nickname" class="form-input" placeholder="例如：库存小能手 / 张三">
+        </div>
+        <div class="form-group">
+            <label>* 2. 您的性别：</label>
+            <div class="radio-group">
+                <label><input type="radio" name="gender" value="男"> 男</label>
+                <label><input type="radio" name="gender" value="女"> 女</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>* 3. 您的年龄：</label>
+            <input type="number" id="inp-age" class="form-input" placeholder="请输入年龄" min="10" max="80">
+        </div>
+        <div id="welcome-err" style="color:var(--danger); font-weight:bold; text-align:center; margin-bottom:10px;"></div>
+        <button class="btn-full" id="btnStartExp">下一步：阅读详细操作说明 ➔</button>
+    `;
+
+    document.getElementById('btnStartExp').onclick = async () => {
+        const nick = document.getElementById('inp-nickname').value.trim();
+        const genderEl = document.querySelector('input[name="gender"]:checked');
+        const ageVal = parseInt(document.getElementById('inp-age').value, 10);
+        const errDiv = document.getElementById('welcome-err');
+
+        if (!nick) { errDiv.innerText = "请填写您的课堂昵称！"; return; }
+        if (!genderEl) { errDiv.innerText = "请选择您的性别！"; return; }
+        if (isNaN(ageVal) || ageVal <= 0 || ageVal > 80) { errDiv.innerText = "请输入正确的年龄！"; return; }
+
+        studentInfo = { nickname: nick, gender: genderEl.value, age: ageVal };
+        const btn = document.getElementById('btnStartExp');
+        btn.disabled = true;
+        btn.innerText = "正在为您分配实验场景...";
+        await assignBalancedCondition();
+        renderInstructions();
+    };
+}
+
+// ================= 步骤 2：规则说明 =================
+function renderInstructions() {
+    const LT = expConfig.leadTime;
+    const firstCost = expConfig.stageCosts[0];
+    let ltDesc = `提前期为 <strong>0 期</strong>，意味着<strong>您本期订购的商品，在本期即可立即到货并用于销售</strong>。`;
+    if (LT > 0) {
+        ltDesc = `提前期为 <strong>${LT} 期</strong>，意味着<strong>您第 t 期订购的商品，将在 ${LT} 期后（即第 t+${LT} 期）才能到达</strong>。由于前 ${LT} 期还没有您之前订的货到达，系统设定<strong>最初 ${LT} 期的默认到货量固定为 ${MEAN_DEMAND} 件</strong>。`;
+    }
+
+    studentApp.innerHTML = `
+        <h2>📖 报童库存决策任务说明</h2>
+        <div class="lt-badge">📌 您的专属实验条件：提前期 (LT) = ${LT} 期</div>
+        <div style="text-align:center; margin-bottom:16px;">
+            <span id="stepIndicator" style="background:#f1f5f9; padding:5px 16px; border-radius:20px; font-weight:600; color:#64748b; font-size:0.9rem;">阅读进度：1 / 3</span>
+        </div>
+
+        <div id="inst-p1">
+            <div class="section">
+                <p><strong>1. 任务背景与阶段安排：</strong></p>
+                <p>在本次实验中，您将先后经营两种不同采购成本的商品，分为<strong>第一阶段（40期）</strong>和<strong>第二阶段（40期）</strong>，共计 80 期。正式开始前有 5 期练习。</p>
+                <p><strong>2. 市场需求规律：</strong></p>
+                <p>每一期的实际市场需求量由计算机随机独立生成，服从 <strong>${MIN_DEMAND} 到 ${MAX_DEMAND} 之间的离散均匀分布</strong>（长期平均需求约为 ${MEAN_DEMAND} 件）。</p>
+                <p><strong>3. 订货提前期规则：</strong></p>
+                <p>📬 ${ltDesc}</p>
+            </div>
+            <div class="nav-buttons"><button class="nav-btn" id="to-p2">下一步：了解利润计算 ➔</button></div>
+        </div>
+
+        <div id="inst-p2" style="display:none;">
+            <div class="section">
+                <p><strong>利润计算公式：</strong></p>
+                <div class="example">本期净利润 = 实际销售量 × 售价(${PRICE}元) − 本期到货量 × 单位成本</div>
+                <div class="sales-note"><strong>ℹ️ 实际销售量 = min（本期到货量，本期实际需求）</strong></div>
+                <p>若到货 200 件，需求 150 件，成本 ${firstCost} 元，则利润为：<strong>150 × ${PRICE} − 200 × ${firstCost}</strong>。</p>
+            </div>
+            <div class="alert-box"><strong>⚠️ 残值为 0：</strong>未卖出的多余商品全部过期作废，无法留到下一期！</div>
+            <div class="nav-buttons">
+                <button class="nav-btn secondary" id="back-p1">⬅ 上一步</button>
+                <button class="nav-btn" id="to-p3">下一步：了解反馈与操作 ➔</button>
+            </div>
+        </div>
+
+        <div id="inst-p3" style="display:none;">
+            <div class="section">
+                <p><strong>🎮 操作方式：</strong></p>
+                <p>每期在输入框中填入您的订货量（<strong>${MIN_DEMAND} ~ ${MAX_DEMAND} 整数</strong>），点击“确认订货”或按回车提交。</p>
+                <p><strong>📋 反馈阶段：</strong></p>
+                <p>提交后会显示本期到货、需求与利润。您可以点击“下一期”按钮进入下一期。</p>
+            </div>
+            <div class="nav-buttons"><button class="nav-btn secondary" id="back-p2">⬅ 上一步</button></div>
+            <button id="btnEnterQuiz" class="btn-full" disabled>正在阅读规则... (10秒)</button>
+        </div>
+    `;
+
+    const showPage = (n) => {
+        [1, 2, 3].forEach(i => document.getElementById(`inst-p${i}`).style.display = (i === n ? 'block' : 'none'));
+        document.getElementById('stepIndicator').innerText = `阅读进度：${n} / 3`;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    document.getElementById('to-p2').onclick = () => showPage(2);
+    document.getElementById('back-p1').onclick = () => showPage(1);
+    document.getElementById('to-p3').onclick = () => showPage(3);
+    document.getElementById('back-p2').onclick = () => showPage(2);
+
+    let wait = 8;
+    const btnQuiz = document.getElementById('btnEnterQuiz');
+    const timer = setInterval(() => {
+        wait--;
+        if (wait > 0) btnQuiz.innerText = `请仔细阅读说明... (还剩 ${wait} 秒)`;
+        else { clearInterval(timer); btnQuiz.disabled = false; btnQuiz.innerText = "✅ 我已明白规则，进入理解度测试"; }
+    }, 1000);
+
+    btnQuiz.onclick = () => renderComprehensionQuiz();
+}
+
+// ================= 步骤 3：理解度测试 =================
+function renderComprehensionQuiz() {
+    const LT = expConfig.leadTime;
+    const cost1 = expConfig.stageCosts[0];
+    const correctProfit = (100 * PRICE) - (200 * cost1);
+
+    studentApp.innerHTML = `
+        <h2>📖 规则理解度测试</h2>
+        <p style="color:#64748b; text-align:center; margin-bottom:18px;">请回答以下 4 道测试题（全部答对即可进入练习）：</p>
+
+        <div class="quiz-item" id="qbox-1">
+            <p>1. 您的提前期为 ${LT} 期。假设您在【第 3 期】下单订购了 180 件，这批货会在第几期到达？</p>
+            <label class="quiz-label"><input type="radio" name="q1" value="${LT===0?'c':'w'}"> A. 第 3 期</label>
+            <label class="quiz-label"><input type="radio" name="q1" value="${LT===1?'c':'w'}"> B. 第 4 期</label>
+            <label class="quiz-label"><input type="radio" name="q1" value="${LT===2?'c':'w'}"> C. 第 5 期</label>
+        </div>
+        <div class="quiz-item" id="qbox-2">
+            <p>2. 到货量大于需求时，剩余商品如何处理？</p>
+            <label class="quiz-label"><input type="radio" name="q2" value="w"> A. 留到下一期</label>
+            <label class="quiz-label"><input type="radio" name="q2" value="c"> B. 报废，残值为0</label>
+            <label class="quiz-label"><input type="radio" name="q2" value="w"> C. 退回供应商</label>
+        </div>
+        <div class="quiz-item" id="qbox-3">
+            <p>3. 每一期的市场需求量是如何生成的？</p>
+            <label class="quiz-label"><input type="radio" name="q3" value="c"> A. 均匀分布随机独立生成</label>
+            <label class="quiz-label"><input type="radio" name="q3" value="w"> B. 与上一期交替出现</label>
+            <label class="quiz-label"><input type="radio" name="q3" value="w"> C. 受上一期订货影响</label>
+        </div>
+        <div class="quiz-item" id="qbox-4">
+            <p>4. 假设本期到货 200 件，实际需求 100 件，成本 ${cost1} 元，售价 ${PRICE} 元，残值0。净利润是多少？</p>
+            <label class="quiz-label"><input type="radio" name="q4" value="w"> A. ${(200*PRICE)-(200*cost1)} 元</label>
+            <label class="quiz-label"><input type="radio" name="q4" value="c"> B. ${correctProfit} 元</label>
+            <label class="quiz-label"><input type="radio" name="q4" value="w"> C. ${(100*PRICE)-(100*cost1)} 元</label>
+        </div>
+
+        <div id="quiz-msg" style="text-align:center; font-weight:bold; margin:12px 0;"></div>
+        <div style="display:flex; gap:12px;">
+            <button class="nav-btn secondary" style="flex:1;" id="btnBackInst">⬅ 回看说明</button>
+            <button class="nav-btn" style="flex:2;" id="btnCheckQuiz">提交答案并开始练习 ➔</button>
+        </div>
+    `;
+
+    document.getElementById('btnBackInst').onclick = () => renderInstructions();
+    document.getElementById('btnCheckQuiz').onclick = () => {
+        const q1 = document.querySelector('input[name="q1"]:checked');
+        const q2 = document.querySelector('input[name="q2"]:checked');
+        const q3 = document.querySelector('input[name="q3"]:checked');
+        const q4 = document.querySelector('input[name="q4"]:checked');
+        const msg = document.getElementById('quiz-msg');
+
+        if (!q1 || !q2 || !q3 || !q4) {
+            msg.style.color = 'var(--danger)';
+            msg.innerText = "⚠️ 请先回答完所有 4 道题目！";
+            return;
+        }
+
+        let allOk = true;
+        [q1, q2, q3, q4].forEach((ans, idx) => {
+            const box = document.getElementById(`qbox-${idx+1}`);
+            box.style.borderColor = ans.value === 'c' ? '#10b981' : '#e11d48';
+            box.style.background = ans.value === 'c' ? '#f0fdf4' : '#fef2f2';
+            if (ans.value !== 'c') allOk = false;
+        });
+
+        if (allOk) {
+            currentStage = 0; 
+            currentPeriod = 1;
+            stageOrders = [];
+            renderGameStage();
+        } else {
+            quizFailCount++;
+            msg.style.color = 'var(--danger)';
+            msg.innerText = "❌ 存在回答错误的题目（已标红），请核对后重试！";
+        }
+    };
+}
+
+// ================= 步骤 4 & 5：决策主界面 =================
+function renderGameStage() {
+    const LT = expConfig.leadTime;
+    const isPractice = (currentStage === 0);
+    const maxPeriods = isPractice ? PRACTICE_PERIODS : FORMAL_PERIODS_PER_STAGE;
+    const unitCost = isPractice ? expConfig.stageCosts[0] : expConfig.stageCosts[currentStage - 1];
+
+    let badgeClass = 'stage-practice', badgeText = `练习阶段 (第 ${practiceRound} 轮)`;
+    if (currentStage === 1) { badgeClass = 'stage-formal-1'; badgeText = `正式实验 · 第一阶段 (共40期)`; }
+    if (currentStage === 2) { badgeClass = 'stage-formal-2'; badgeText = `正式实验 · 第二阶段 (共40期)`; }
+
+    let currentArrival = MEAN_DEMAND;
+    if (LT > 0) {
+        currentArrival = (currentPeriod <= LT) ? MEAN_DEMAND : stageOrders[currentPeriod - LT - 1];
+    }
+
+    let pipelineHtml = (LT === 0) ? `⚡ 提前期为 0：本期订货本期到货。` : `🚚 提前期为 ${LT} 期：<strong>本期到货 ${currentArrival} 件</strong>（来自第 ${currentPeriod<=LT ? '初始设定' : currentPeriod-LT} 期订货）。`;
+
+    studentApp.innerHTML = `
+        <div style="text-align:center;">
+            <span class="stage-badge ${badgeClass}">${badgeText}</span><br>
+            <div class="period-counter">第 ${currentPeriod} / ${maxPeriods} 期</div>
+        </div>
+
+        <div class="cost-price-bar">
+            <span>📌 提前期: ${LT} 期</span>
+            <span>💰 单位成本: <strong style="color:#be123c;">${unitCost} 元</strong></span>
+            <span>🏷️ 单位售价: <strong style="color:#15803d;">${PRICE} 元</strong></span>
+        </div>
+
+        <div class="dist-box">
+            <div class="dist-title">📊 市场需求随机均匀分布区间</div>
+            <div class="dist-range">${MIN_DEMAND} ~ ${MAX_DEMAND} 件</div>
+            <div class="dist-sub">长期平均需求 ≈ ${MEAN_DEMAND} 件 | 残值 = 0 元</div>
+        </div>
+
+        <div style="background:#f0f9ff; border:1px solid #bae6fd; padding:10px 14px; border-radius:12px; margin-bottom:14px; font-size:0.92rem; text-align:center;">
+            ${pipelineHtml}
+        </div>
+
+        <!-- 决策输入区：无默认答案的空白框 -->
+        <div id="decision-zone" class="order-input-zone">
+            <div style="font-weight:bold; color:var(--primary); margin-bottom:6px;">
+                请输入您本期的订货量（${MIN_DEMAND} ~ ${MAX_DEMAND} 整数）：
+            </div>
+            <input type="number" id="order-input-center" class="order-num-input-center" min="${MIN_DEMAND}" max="${MAX_DEMAND}" placeholder="输入数字" autofocus>
+            <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                <button type="button" class="q-btn" data-val="50">50</button>
+                <button type="button" class="q-btn" data-val="75">75(低最优)</button>
+                <button type="button" class="q-btn" data-val="100">100</button>
+                <button type="button" class="q-btn" data-val="150">150(均值)</button>
+                <button type="button" class="q-btn" data-val="200">200</button>
+                <button type="button" class="q-btn" data-val="225">225(高最优)</button>
+                <button type="button" class="q-btn" data-val="250">250</button>
+            </div>
+            <div id="order-err" style="color:var(--danger); font-size:0.9rem; font-weight:bold; margin-top:8px;"></div>
+            <button class="btn-full" id="btnSubmitOrder" style="background:var(--accent); margin-top:14px;">📦 确认本期订货 (回车提交)</button>
+        </div>
+
+        <div id="feedback-zone" style="display:none;"></div>
+    `;
+
+    const inp = document.getElementById('order-input-center');
+    document.querySelectorAll('.q-btn').forEach(b => {
+        b.onclick = () => { inp.value = b.dataset.val; inp.focus(); };
+    });
+
+    inFeedback = false;
+    periodStartTime = performance.now();
+    inp.focus();
+
+    document.getElementById('btnSubmitOrder').onclick = () => submitPeriodOrder(unitCost, maxPeriods);
+}
+
+document.onkeydown = (e) => {
+    if (document.getElementById('teacher-app').style.display !== 'none') return;
+    const nextBtn = document.getElementById('btnManualNext');
+    const subBtn = document.getElementById('btnSubmitOrder');
+    const inp = document.getElementById('order-input-center');
+
+    if (e.key === 'Enter') {
+        if (inFeedback && nextBtn) {
+            e.preventDefault();
+            nextBtn.click();
+        } else if (!inFeedback && subBtn && inp && document.activeElement === inp) {
+            e.preventDefault();
+            subBtn.click();
+        }
+    }
+};
+
+function submitPeriodOrder(unitCost, maxPeriods) {
+    if (inFeedback) return;
+    const inp = document.getElementById('order-input-center');
+    const valStr = inp.value.trim();
+    const errDiv = document.getElementById('order-err');
+
+    // 严格校验：只能是 0 到 300 之间的整数，拒绝字母、负数、小数、空值
+    const orderQty = Number(valStr);
+    if (valStr === "" || isNaN(orderQty) || !Number.isInteger(orderQty) || orderQty < MIN_DEMAND || orderQty > MAX_DEMAND) {
+        errDiv.innerText = `⚠️ 只能输入 ${MIN_DEMAND} 到 ${MAX_DEMAND} 之间的整数！请勿输入字母、小数或负数。`;
+        inp.focus();
+        return;
+    }
+
+    const rtMs = Math.round(performance.now() - periodStartTime);
+    if (currentStage > 0 && rtMs < 200) {
+        invalidRtCount++;
+        if (invalidRtCount > 3) {
+            studentApp.innerHTML = `<div class="alert-box" style="text-align:center;"><h3>⚠️ 实验中止</h3><p>检测到多次作答异常。实验已结束。</p></div>`;
+            return;
+        }
+    }
+
+    const LT = expConfig.leadTime;
+    const arrivalQty = (LT === 0) ? orderQty : ((currentPeriod <= LT) ? MEAN_DEMAND : stageOrders[currentPeriod - LT - 1]);
+    const demand = generateUniformDemand();
+    const profit = calcProfit(arrivalQty, demand, unitCost);
+
+    stageOrders.push(orderQty);
+
+    const record = {
+        stage: currentStage,
+        period: currentPeriod,
+        global_period: currentStage === 2 ? (FORMAL_PERIODS_PER_STAGE + currentPeriod) : currentPeriod,
+        unit_cost: unitCost,
+        margin_type: unitCost === COST_HIGH_MARGIN ? 'High' : 'Low',
+        order_qty: orderQty,
+        arrival_qty: arrivalQty,
+        demand: demand,
+        profit: profit,
+        rt_ms: rtMs
+    };
+
+    if (currentStage === 0) allPracticeData.push(record);
+    else formalTrials.push(record);
+
+    inFeedback = true;
+    document.getElementById('decision-zone').style.display = 'none';
+    const fbZone = document.getElementById('feedback-zone');
+    fbZone.style.display = 'block';
+
+    const profitColor = profit >= 0 ? '#15803d' : '#be123c';
+    fbZone.innerHTML = `
+        <div class="feedback-card">
+            <div style="text-align:center; font-weight:bold; color:#92400e; margin-bottom:10px;">
+                📋 第 ${currentPeriod} 期反馈结果（可点击下方按钮或按回车进入下一期）
+            </div>
+            <div class="fb-grid">
+                <div class="fb-item"><div class="fb-label">本期订货量</div><div class="fb-val" style="color:#0ea5e9;">${orderQty} 件</div></div>
+                <div class="fb-item"><div class="fb-label">实际到货量</div><div class="fb-val" style="color:#6366f1;">${arrivalQty} 件</div></div>
+                <div class="fb-item"><div class="fb-label">市场实际需求</div><div class="fb-val">${demand} 件</div></div>
+                <div class="fb-item"><div class="fb-label">本期实际净利润</div><div class="fb-val" style="color:${profitColor};">${profit>=0?'+'+profit:profit} 元</div></div>
+            </div>
+            <button class="btn-full" id="btnManualNext" style="margin-top:14px; background:var(--primary); padding:12px;">
+                下一期 ➔ (或按 Enter 键)
+            </button>
+        </div>
+    `;
+
+    const goNext = () => {
+        inFeedback = false;
+        currentPeriod++;
+        if (currentPeriod > maxPeriods) {
+            handleStageComplete();
+        } else {
+            renderGameStage();
+        }
+    };
+
+    document.getElementById('btnManualNext').onclick = goNext;
+}
+
+// ================= 阶段转场与结算 =================
+function handleStageComplete() {
+    if (currentStage === 0) {
+        studentApp.innerHTML = `
+            <h2>✅ 练习阶段完成！</h2>
+            <p style="text-align:center; color:#475569; line-height:1.6;">
+                您已完成练习。接下来正式进入<strong>第一阶段（共 ${FORMAL_PERIODS_PER_STAGE} 期）</strong>。<br>
+                当前采购成本为 <strong>${expConfig.stageCosts[0]} 元/件</strong>，售价为 <strong>${PRICE} 元/件</strong>。
+            </p>
+            <div class="nav-buttons">
+                <button class="nav-btn secondary" id="btnMorePractice">🔄 再练一次</button>
+                <button class="nav-btn" style="background:var(--success);" id="btnStartStage1">🚀 进入第一阶段 (40期)</button>
+            </div>
+        `;
+        document.getElementById('btnMorePractice').onclick = () => { practiceRound++; currentPeriod = 1; stageOrders = []; renderGameStage(); };
+        document.getElementById('btnStartStage1').onclick = () => { currentStage = 1; currentPeriod = 1; stageOrders = []; renderGameStage(); };
+    } else if (currentStage === 1) {
+        // 第一阶段 40 期结束：展示第一阶段总收益，再进入第二阶段拦截测试题
+        stage1Profit = formalTrials.reduce((acc, r) => acc + r.profit, 0);
+
+        studentApp.innerHTML = `
+            <h2>🎉 第一阶段（40期）顺利完成！</h2>
+            <div class="reward-box" style="text-align:center;">
+                <div style="font-size:1.1rem;">📊 在刚刚过去的 40 期决策中</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#0369a1; margin:8px 0;">总利润为：${stage1Profit} 元</div>
+                <div style="font-size:0.88rem; color:#64748b;">即将进入第二阶段，请准备迎接新商品的挑战！</div>
+            </div>
+            <button class="btn-full" id="btnGoStage2Quiz" style="background:var(--accent);">点击前往：查看第二阶段参数变更 ➔</button>
+        `;
+
+        document.getElementById('btnGoStage2Quiz').onclick = () => {
+            renderStage2Quiz();
+        };
+    } else if (currentStage === 2) {
+        // 第二阶段 40 期结束：展示第二阶段总收益，再进入诊断报告问卷
+        const stage2Trials = formalTrials.slice(FORMAL_PERIODS_PER_STAGE);
+        stage2Profit = stage2Trials.reduce((acc, r) => acc + r.profit, 0);
+
+        studentApp.innerHTML = `
+            <h2>🎉 第二阶段（40期）顺利完成！</h2>
+            <div class="reward-box" style="text-align:center;">
+                <div style="font-size:1.1rem;">📊 在刚刚过去的第二阶段 40 期决策中</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#6b21a8; margin:8px 0;">总利润为：${stage2Profit} 元</div>
+                <div style="font-size:0.88rem; color:#64748b;">接下来请完成最后简短的体验问卷，即可生成您的个人决策总报告！</div>
+            </div>
+            <button class="btn-full" id="btnGoSurvey" style="background:var(--success);">填写体验问卷并生成报告 ➔</button>
+        `;
+        document.getElementById('btnGoSurvey').onclick = () => renderSurveyPage();
+    }
+}
+
+// 第二阶段拦截测试题（完全复现规则理解度测试第4题的成本变更版）
+function renderStage2Quiz() {
+    const oldCost = expConfig.stageCosts[0];
+    const newCost = expConfig.stageCosts[1];
+    const newUnitMargin = PRICE - newCost; 
+    const correctProfit = (100 * PRICE) - (200 * newCost);
+
+    studentApp.innerHTML = `
+        <h2>📢 第二阶段参数变更确认</h2>
+        <div class="alert-box" style="background:#eff6ff; border-color:#93c5fd; color:#1e3a8a;">
+            <strong>⚠️ 请注意：</strong><br>
+            商品的单位采购成本已由第一阶段的 <strong>${oldCost} 元/件</strong>，变更为 <strong><span style="color:#be123c; text-decoration:underline;">${newCost} 元/件</span></strong>（售价仍为 ${PRICE} 元/件，提前期不变）。
+        </div>
+
+        <div class="quiz-item">
+            <p>请完成以下确认测试：</p>
+            <p style="font-weight:normal; margin-bottom:6px;"><strong>1. 在第二阶段中，每件商品的【单位采购成本】变成了多少元？</strong></p>
+            <div class="radio-group" style="margin-bottom:14px;">
+                <label><input type="radio" name="s2_q1" value="3"> 3 元/件</label>
+                <label><input type="radio" name="s2_q1" value="9"> 9 元/件</label>
+                <label><input type="radio" name="s2_q1" value="12"> 12 元/件</label>
+            </div>
+
+            <p style="font-weight:normal; margin-bottom:6px;"><strong>2. 假设在第二阶段中，本期【实际到货量】是 200 件，而【市场实际需求】只有 100 件。请问本期的净利润是多少？</strong></p>
+            <div class="radio-group">
+                <label><input type="radio" name="s2_q2" value="w"> A. ${(200*PRICE)-(200*newCost)} 元</label>
+                <label><input type="radio" name="s2_q2" value="c"> B. ${correctProfit} 元</label>
+                <label><input type="radio" name="s2_q2" value="w"> C. ${(100*PRICE)-(100*newCost)} 元</label>
+            </div>
+        </div>
+        <div id="s2-err" style="color:var(--danger); font-weight:bold; text-align:center; margin-bottom:10px;"></div>
+        <button class="btn-full" id="btnStartStage2Final">✅ 回答正确，正式开始第二阶段 (40期)</button>
+    `;
+
+    document.getElementById('btnStartStage2Final').onclick = () => {
+        const a1 = document.querySelector('input[name="s2_q1"]:checked');
+        const a2 = document.querySelector('input[name="s2_q2"]:checked');
+        const err = document.getElementById('s2-err');
+        if (!a1 || !a2) { err.innerText = "请先完成上述两道确认题！"; return; }
+        if (parseInt(a1.value, 10) !== newCost || a2.value !== 'c') {
+            err.innerText = `❌ 回答有误！请仔细核对新成本（${newCost}元）下的利润计算公式后重新选择！`;
+            return;
+        }
+        currentStage = 2;
+        currentPeriod = 1;
+        stageOrders = [];
+        renderGameStage();
+    };
+}
+
+// ================= 问卷页 =================
+function renderSurveyPage() {
+    const questions = [
+        { id: 'q1', text: 'Q1. 在实验过程中，我感觉自己调整的订货量与屏幕上显示的利润结果之间，存在明确的因果关系。' },
+        { id: 'q2', text: 'Q2. 当系统显示当前的利润结果时，我很难将其准确回溯并对应到之前某一次特定的订货操作上。' },
+        { id: 'q3', text: 'Q3. 在尝试摸索利润规律的过程中，我感到非常吃力和受挫。' }
+    ];
+
+    studentApp.innerHTML = `
+        <h2>📝 决策体验问卷</h2>
+        <p style="color:#64748b; text-align:center; margin-bottom:20px;">请根据您在整个实验过程中的真实感受打分（1 = 非常不同意，7 = 非常同意）：</p>
+        <div>
+            ${questions.map(q => `
+                <div class="quiz-item">
+                    <p>${q.text}</p>
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#64748b; margin-top:6px;"><span>1 (非常不同意)</span><span>4 (中立)</span><span>7 (非常同意)</span></div>
+                    <div class="likert-scale" data-qid="${q.id}">
+                        ${[1,2,3,4,5,6,7].map(n => `<div class="likert-btn" data-val="${n}">${n}</div>`).join('')}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        <div id="survey-err" style="color:var(--danger); font-weight:bold; text-align:center; margin:10px 0;"></div>
+        <button class="btn-full" id="btnFinalSubmit">🎉 提交数据并生成个人决策报告</button>
+    `;
+
+    document.querySelectorAll('.likert-scale').forEach(scale => {
+        const qid = scale.dataset.qid;
+        scale.querySelectorAll('.likert-btn').forEach(btn => {
+            btn.onclick = () => {
+                scale.querySelectorAll('.likert-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                surveyScores[qid] = parseInt(btn.dataset.val, 10);
+            };
+        });
+    });
+
+    document.getElementById('btnFinalSubmit').onclick = async () => {
+        if (!surveyScores.q1 || !surveyScores.q2 || !surveyScores.q3) {
+            document.getElementById('survey-err').innerText = "⚠️ 请完成全部 3 道题的打分！";
+            return;
+        }
+        const btn = document.getElementById('btnFinalSubmit');
+        btn.disabled = true; btn.innerText = "正在提交...";
+        await saveAndShowReport();
+    };
+}
+
+// ================= 个人报告页（带折线图 Canvas） =================
+async function saveAndShowReport() {
+    const totalProfit = formalTrials.reduce((acc, r) => acc + r.profit, 0);
+    const dissocScore = Number((((8 - surveyScores.q1) + surveyScores.q2 + surveyScores.q3) / 3).toFixed(2));
+
+    const highTrials = formalTrials.filter(t => t.margin_type === 'High');
+    const lowTrials  = formalTrials.filter(t => t.margin_type === 'Low');
+    const avgHighOrder = Math.round(highTrials.reduce((a, b) => a + b.order_qty, 0) / (highTrials.length || 1));
+    const avgLowOrder  = Math.round(lowTrials.reduce((a, b) => a + b.order_qty, 0) / (lowTrials.length || 1));
+
+    const payload = {
+        session_id: currentSessionId,
+        nickname: studentInfo.nickname,
+        gender: studentInfo.gender,
+        age: studentInfo.age,
+        lead_time: expConfig.leadTime,
+        order_seq: expConfig.orderSeq,
+        total_profit: totalProfit,
+        quiz_fail_count: quizFailCount,
+        invalid_rt_count: invalidRtCount,
+        q1_score: surveyScores.q1,
+        q2_score: surveyScores.q2,
+        q3_score: surveyScores.q3,
+        dissociation_score: dissocScore,
+        practice_data: allPracticeData,
+        trials_data: formalTrials
+    };
+
+    const localHistory = JSON.parse(localStorage.getItem('local_exp_records') || '[]');
+    localHistory.push({ ...payload, created_at: new Date().toISOString() });
+    localStorage.setItem('local_exp_records', JSON.stringify(localHistory));
+
+    if (supabaseClient) {
+        await supabaseClient.from('newsvendor_experiments').insert([payload]);
+    }
+
+    studentApp.innerHTML = `
+        <h2>🎉 实验完成 · 个人决策报告</h2>
+        <div class="reward-box" style="text-align:center;">
+            <div style="font-size:0.95rem;">👤 ${studentInfo.nickname} &nbsp;|&nbsp; 📌 提前期: LT = ${expConfig.leadTime} 期</div>
+            <div style="font-size:1.4rem; font-weight:800; color:#0369a1; margin-top:6px;">📊 80期总利润：${totalProfit} 元 (阶段1: ${stage1Profit} | 阶段2: ${stage2Profit})</div>
+        </div>
+
+        <div class="section">
+            <h4 style="color:var(--primary); margin-bottom:6px;">📈 个人 80 期决策轨迹折线图：</h4>
+            <canvas id="myReportCanvas" width="580" height="240" style="width:100%; height:240px; background:white; border:1px solid #cbd5e1; border-radius:12px;"></canvas>
+            <p style="font-size:0.8rem; color:#64748b; text-align:center; margin-top:4px;">蓝线=实际订货量, 黑虚线=各阶段理论最优解(225与75), 橙虚线=均值150。</p>
+        </div>
+
+        <div class="section">
+            <h4 style="color:var(--primary); margin-bottom:6px;">🔍 行为表现小结：</h4>
+            <table class="data-table">
+                <thead><tr><th>商品类型</th><th>最优解 (q*)</th><th>您的平均订货</th><th>行为倾向</th></tr></thead>
+                <tbody>
+                    <tr><td>高利润 (q*=225)</td><td>225 件</td><td style="font-weight:bold;">${avgHighOrder} 件</td><td>${avgHighOrder<215?'向中心150收缩 (PTC)':'贴近最优'}</td></tr>
+                    <tr><td>低利润 (q*=75)</td><td>75 件</td><td style="font-weight:bold;">${avgLowOrder} 件</td><td>${avgLowOrder>85?'向中心150靠拢 (PTC)':'贴近最优'}</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p style="font-size:0.88rem; color:#64748b; text-align:center; margin-top:14px;">请抬头观看教室大屏幕，看全班同学的整体趋势！</p>
+    `;
+
+    // 绘制个人 Canvas 折线图
+    setTimeout(() => {
+        const canvas = document.getElementById('myReportCanvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // 边距
+        const pad = 40;
+        const plotW = w - pad * 2;
+        const plotH = h - pad * 2;
+
+        // 坐标轴
+        ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pad, pad); ctx.lineTo(pad, h - pad); ctx.lineTo(w - pad, h - pad);
+        ctx.stroke();
+
+        // 标签
+        ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
+        ctx.fillText('0', pad - 12, h - pad + 4);
+        ctx.fillText('300', pad - 24, pad + 4);
+        ctx.fillText('1', pad, h - pad + 14);
+        ctx.fillText('40', pad + plotW / 2 - 10, h - pad + 14);
+        ctx.fillText('80', w - pad - 10, h - pad + 14);
+
+        // 辅助横线：均值 150
+        const y150 = (h - pad) - (150 / 300) * plotH;
+        ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(pad, y150); ctx.lineTo(w - pad, y150); ctx.stroke();
+
+        // 辅助横线：前40期最优 225，后40期最优 75
+        ctx.strokeStyle = '#0f172a'; ctx.setLineDash([2, 2]);
+        // 前40期段
+        const y225 = (h - pad) - (225 / 300) * plotH;
+        ctx.beginPath(); ctx.moveTo(pad, y225); ctx.lineTo(pad + plotW / 2, y225); ctx.stroke();
+        // 后40期段
+        const y75 = (h - pad) - (75 / 300) * plotH;
+        ctx.beginPath(); ctx.moveTo(pad + plotW / 2, y75); ctx.lineTo(w - pad, y75); ctx.stroke();
+        ctx.setLineDash([]); // 恢复实线
+
+        // 绘制实际订货轨迹折线
+        ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        formalTrials.forEach((t, i) => {
+            const x = pad + (i / 79) * plotW;
+            const y = (h - pad) - (t.order_qty / 300) * plotH;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    }, 50);
+}
+
+// ================= 教师端：大屏 3 张班级均值折线图渲染 =================
+document.getElementById('btnToggleTeacher').onclick = () => {
+    let pwd = prompt("🔒 教师端受密码保护，请输入访问密码：");
+    if (pwd === null) return;
+    if (pwd !== "840319") { alert("❌ 密码错误！"); return; }
+
+    const sApp = document.getElementById('student-app');
+    const tApp = document.getElementById('teacher-app');
+    if (tApp.style.display === 'none') {
+        sApp.style.display = 'none';
+        tApp.style.display = 'block';
+        document.getElementById('btnToggleTeacher').innerText = "👩‍🎓 返回学生端";
+        loadDashboardData();
+    } else {
+        tApp.style.display = 'none';
+        sApp.style.display = 'block';
+        document.getElementById('btnToggleTeacher').innerText = "👨‍🏫 教师端 / 课堂看板";
+    }
+};
+
+document.getElementById('btnConfigDb').onclick = () => {
+    const p = document.getElementById('db-config-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+};
+document.getElementById('btnSaveDbConfig').onclick = () => {
+    localStorage.setItem('sb_url', document.getElementById('cfg-url').value.trim());
+    localStorage.setItem('sb_key', document.getElementById('cfg-key').value.trim());
+    initSupabase();
+    document.getElementById('db-config-panel').style.display = 'none';
+    loadDashboardData();
+};
+document.getElementById('btnSetSession').onclick = () => {
+    const val = document.getElementById('t-session-input').value.trim();
+    if (!val) return;
+    currentSessionId = val;
+    localStorage.setItem('exp_session_id', val);
+    document.getElementById('topSessionBadge').innerText = val;
+    loadDashboardData();
+};
+document.getElementById('btnRefreshDash').onclick = () => loadDashboardData();
+
+function calcDemandChasingCorr(trials) {
+    let x = [], y = [];
+    [1, 2].forEach(stg => {
+        const stgTrials = trials.filter(t => t.stage === stg).sort((a,b) => a.period - b.period);
+        for (let i = 1; i < stgTrials.length; i++) {
+            x.push(stgTrials[i - 1].demand);
+            y.push(stgTrials[i].order_qty);
+        }
+    });
+    if (x.length < 3) return 0;
+    const n = x.length;
+    const meanX = x.reduce((a,b)=>a+b,0)/n;
+    const meanY = y.reduce((a,b)=>a+b,0)/n;
+    let num = 0, denX = 0, denY = 0;
+    for (let i = 0; i < n; i++) {
+        const dx = x[i] - meanX;
+        const dy = y[i] - meanY;
+        num += dx * dy;
+        denX += dx * dx;
+        denY += dy * dy;
+    }
+    return (denX === 0 || denY === 0) ? 0 : Number((num / Math.sqrt(denX * denY)).toFixed(2));
+}
+
+let cachedCurrentRecords = [];
+
+async function loadDashboardData() {
+    const sumDiv = document.getElementById('dash-summary');
+    sumDiv.innerHTML = "⏳ 正在读取当前课堂批次数据...";
+    let records = [];
+
+    if (supabaseClient) {
+        const { data } = await supabaseClient.from('newsvendor_experiments').select('*').eq('session_id', currentSessionId).order('total_profit', { ascending: false });
+        if (data) records = data;
+    }
+    if (records.length === 0) {
+        const localAll = JSON.parse(localStorage.getItem('local_exp_records') || '[]');
+        records = localAll.filter(r => r.session_id === currentSessionId);
+    }
+    cachedCurrentRecords = records;
+
+    if (records.length === 0) {
+        sumDiv.innerHTML = `当前课堂批次 <strong>[${currentSessionId}]</strong> 暂无学生提交数据。`;
+        document.getElementById('dash-charts').style.display = 'none';
+        document.getElementById('student-tbody').innerHTML = `<tr><td colspan="9" style="color:#94a3b8;">等待学生完成...</td></tr>`;
+        return;
+    }
+
+    sumDiv.innerHTML = `✅ 当前课堂批次 <strong>[${currentSessionId}]</strong> 已完成提交：<strong>${records.length} 人</strong>`;
+    document.getElementById('dash-charts').style.display = 'grid';
+
+    // 教师端表格行生成
+    const tbodyRows = records.map((r, idx) => {
+        const trials = r.trials_data || [];
+        const stg1 = trials.filter(t => t.stage === 1).reduce((a,b)=>a+b.profit, 0);
+        const stg2 = trials.filter(t => t.stage === 2).reduce((a,b)=>a+b.profit, 0);
+        const dcCorr = calcDemandChasingCorr(trials);
+        return `
+            <tr>
+                <td><strong>#${idx + 1}</strong></td>
+                <td>${r.nickname}</td>
+                <td><span class="session-tag">LT = ${r.lead_time}</span></td>
+                <td>${r.order_seq === 'HL' ? '先高后低' : '先低后高'}</td>
+                <td style="color:#0369a1;">${stg1} 元</td>
+                <td style="color:#6b21a8;">${stg2} 元</td>
+                <td style="font-weight:bold; color:#15803d;">${r.total_profit} 元</td>
+                <td>${dcCorr}</td>
+                <td>${r.dissociation_score ?? '-'}</td>
+            </tr>
+        `;
+    });
+    document.getElementById('student-tbody').innerHTML = tbodyRows.join('');
+
+    // 渲染教师端 3 张班级均值折线图 (LT = 0, 1, 2)
+    [0, 1, 2].forEach(lt => {
+        const subRecs = records.filter(r => r.lead_time === lt);
+        renderTeacherCanvas(`canvas-lt${lt}`, subRecs);
+    });
+}
+
+function renderTeacherCanvas(canvasId, subRecs) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = 30;
+    const plotW = w - pad * 2;
+    const plotH = h - pad * 2;
+
+    // 坐标轴
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, h - pad); ctx.lineTo(w - pad, h - pad); ctx.stroke();
+
+    ctx.fillStyle = '#64748b'; ctx.font = '9px sans-serif';
+    ctx.fillText('0', pad - 10, h - pad + 3);
+    ctx.fillText('300', pad - 20, pad + 3);
+    ctx.fillText('1', pad, h - pad + 12);
+    ctx.fillText('40', pad + plotW / 2 - 6, h - pad + 12);
+    ctx.fillText('80', w - pad - 6, h - pad + 12);
+
+    // 理论最优解虚线
+    const y225 = (h - pad) - (225 / 300) * plotH;
+    const y75  = (h - pad) - (75 / 300) * plotH;
+    ctx.strokeStyle = '#0f172a'; ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(pad, y225); ctx.lineTo(pad + plotW/2, y225); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad + plotW/2, y75); ctx.lineTo(w - pad, y75); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (subRecs.length === 0) {
+        ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif';
+        ctx.fillText(`暂无 LT=${canvasId.slice(-1)} 的学生数据`, pad + 40, pad + 80);
+        return;
+    }
+
+    // 计算 1 ~ 80 期的班级均值
+    const periodAvgs = [];
+    for (let p = 1; p <= 80; p++) {
+        let sum = 0, count = 0;
+        subRecs.forEach(r => {
+            const tr = (r.trials_data || []).find(t => t.global_period === p);
+            if (tr) { sum += tr.order_qty; count++; }
+        });
+        periodAvgs.push(count > 0 ? sum / count : null);
+    }
+
+    // 画班级均值折线（前40期用蓝色，后40期用紫色）
+    ctx.lineWidth = 2.5;
+    for (let i = 0; i < 79; i++) {
+        const y1 = periodAvgs[i], y2 = periodAvgs[i+1];
+        if (y1 === null || y2 === null) continue;
+        ctx.strokeStyle = i < 40 ? '#0ea5e9' : '#8b5cf6';
+        ctx.beginPath();
+        ctx.moveTo(pad + (i / 79) * plotW, (h - pad) - (y1 / 300) * plotH);
+        ctx.lineTo(pad + ((i+1) / 79) * plotW, (h - pad) - (y2 / 300) * plotH);
+        ctx.stroke();
+    }
+}
+
+// 导出 CSV 长表
+function exportTrialsToCSV(records, filename) {
+    if (!records || records.length === 0) { alert("暂无数据可导出！"); return; }
+    const headers = [
+        "session_id", "participant_id", "nickname", "gender", "age",
+        "lead_time", "order_seq", "stage", "period", "global_period",
+        "margin_type", "unit_cost", "price", "order_qty", "arrival_qty",
+        "demand", "profit", "rt_ms", "q1_score", "q2_score", "q3_score",
+        "dissociation_score", "quiz_fail_count", "invalid_rt_count", "created_at"
+    ];
+    const rows = [headers.join(",")];
+    records.forEach(r => {
+        (r.trials_data || []).forEach(t => {
+            rows.push([
+                `"${r.session_id}"`, `"${r.id || r.nickname}"`, `"${r.nickname}"`, `"${r.gender}"`, r.age,
+                r.lead_time, `"${r.order_seq}"`, t.stage, t.period, t.global_period,
+                `"${t.margin_type}"`, t.unit_cost, PRICE, t.order_qty, t.arrival_qty,
+                t.demand, t.profit, t.rt_ms, r.q1_score, r.q2_score, r.q3_score,
+                r.dissociation_score, r.quiz_fail_count, r.invalid_rt_count, `"${r.created_at || ''}"`
+            ].join(","));
+        });
+    });
+    const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+}
+
+document.getElementById('btnExportCurrent').onclick = () => exportTrialsToCSV(cachedCurrentRecords, `Newsvendor_${currentSessionId}.csv`);
+document.getElementById('btnExportAll').onclick = async () => {
+    let allData = [];
+    if (supabaseClient) {
+        const { data } = await supabaseClient.from('newsvendor_experiments').select('*').order('created_at', { ascending: true });
+        if (data) allData = data;
+    }
+    if (allData.length === 0) allData = JSON.parse(localStorage.getItem('local_exp_records') || '[]');
+    exportTrialsToCSV(allData, `Newsvendor_All_Sessions_${new Date().toISOString().slice(0,10)}.csv`);
+};
+
+renderWelcomePage();
+</script>
+</body>
+</html>
