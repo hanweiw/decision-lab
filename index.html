@@ -222,7 +222,7 @@
         table.data-table th, table.data-table td { border: 1px solid #cbd5e1; padding: 7px 6px; text-align: center; }
         table.data-table th { background: #f1f5f9; color: #1e293b; }
 
-        /* 密码弹窗遮罩（兼容微信与手机浏览器） */
+        /* 密码弹窗遮罩 */
         .modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(15, 23, 42, 0.75);
@@ -245,7 +245,7 @@
 
 <div class="page-wrapper">
     <div class="top-bar" id="topBarContainer">
-        <div>课堂批次: <span class="session-tag" id="topSessionBadge">2026_BI_Class1</span></div>
+        <div>课堂批次: <span class="session-tag" id="topSessionBadge">2026_1109_Class1</span></div>
         <button class="teacher-toggle-btn" id="btnToggleTeacher">👨‍🏫 教师端</button>
     </div>
 
@@ -256,11 +256,17 @@
     <div id="teacher-app" class="card-container wide-container" style="display:none;">
         <h2>📊 库存决策实验 · 课堂实时看板</h2>
         
-        <div style="background:#f1f5f9; padding:14px; border-radius:14px; margin-bottom:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;">
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <strong>当前课堂批次:</strong>
-                <input type="text" id="t-session-input" class="form-input" style="width:160px; padding:6px 10px;" value="2026_BI_Class1">
-                <button class="nav-btn" style="padding:7px 14px; font-size:0.85rem;" id="btnSetSession">🔄 切换/开启新课堂</button>
+        <div style="background:#f1f5f9; padding:14px; border-radius:14px; margin-bottom:16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <div>
+                    <strong style="font-size:0.88rem;">当前课堂批次:</strong>
+                    <input type="text" id="t-session-input" class="form-input" style="width:165px; padding:6px 10px; display:inline-block;" value="2026_1109_Class1">
+                </div>
+                <div>
+                    <strong style="font-size:0.88rem;">学生准入密码:</strong>
+                    <input type="text" id="t-stupwd-input" class="form-input" style="width:95px; padding:6px 10px; display:inline-block; font-weight:bold; color:var(--primary);" value="1109">
+                </div>
+                <button class="nav-btn" style="padding:7px 14px; font-size:0.85rem;" id="btnSetSession">☁️ 同步设置到全班 / 切换课堂</button>
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button class="nav-btn" style="padding:7px 14px; font-size:0.85rem; background:#10b981;" id="btnRefreshDash">⚡ 刷新本堂数据</button>
@@ -385,7 +391,9 @@
 // ================= 1. 常量与数据库初始化 =================
 const DEFAULT_SUPABASE_URL = "https://hndblcpgxlnprlqlhokm.supabase.co"; 
 const DEFAULT_SUPABASE_KEY = "sb_publishable_6hsdhdffzHAIGrvEa4Xayw_1x6a-MGB";
-const DEFAULT_SESSION_ID   = "2026_BI_Class1"; 
+const DEFAULT_SESSION_ID   = "2026_1109_Class1"; // 默认课堂批次号（已避开之前的测试数据）
+const DEFAULT_STUDENT_PWD  = "1109";             // 默认学生进入密码（11月9日课程）
+const CONFIG_MARKER_SESSION = "__SYSTEM_CONFIG__"; // 云端配置同步专用内部标识
 
 const MIN_DEMAND = 1;
 const MAX_DEMAND = 300;
@@ -414,9 +422,46 @@ function initSupabase() {
 }
 
 const urlParams = new URLSearchParams(window.location.search);
-let currentSessionId = urlParams.get('session') || localStorage.getItem('exp_session_id') || DEFAULT_SESSION_ID;
-document.getElementById('topSessionBadge').innerText = currentSessionId;
-document.getElementById('t-session-input').value = currentSessionId;
+let currentSessionId = urlParams.get('session') || DEFAULT_SESSION_ID;
+let currentStudentPwd = DEFAULT_STUDENT_PWD;
+
+function updateTopBarDisplay() {
+    document.getElementById('topSessionBadge').innerText = currentSessionId;
+    document.getElementById('t-session-input').value = currentSessionId;
+    document.getElementById('t-stupwd-input').value = currentStudentPwd;
+}
+updateTopBarDisplay();
+
+// 从云端自动拉取老师最新设定的课堂批次号和学生准入密码
+async function syncGlobalConfigFromCloud() {
+    if (!supabaseClient) return;
+    try {
+        const { data } = await supabaseClient
+            .from('newsvendor_experiments')
+            .select('nickname, gender, created_at')
+            .eq('session_id', CONFIG_MARKER_SESSION)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        if (data && data.length > 0) {
+            if (!urlParams.get('session') && data[0].nickname) {
+                currentSessionId = data[0].nickname;
+            }
+            if (data[0].gender) {
+                currentStudentPwd = data[0].gender;
+            }
+            updateTopBarDisplay();
+        }
+    } catch (e) {
+        console.warn("读取云端课堂配置跳过:", e);
+    }
+}
+
+// 自动检测作答设备类型与屏幕宽度（审稿人控制变量）
+function detectDeviceType() {
+    const ua = navigator.userAgent || '';
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|MicroMessenger/i.test(ua);
+    return (isMobileUA || window.innerWidth < 768) ? 'Mobile' : 'Desktop';
+}
 
 // ================= 2. 学生端状态变量 =================
 let studentInfo = { nickname: '', gender: '', age: null };
@@ -424,7 +469,7 @@ let expConfig = { leadTime: 0, orderSeq: 'HL', stageCosts: [3, 9] };
 
 let currentStage = 0;      // 0=练习, 1=阶段1(40期), 2=阶段2(40期)
 let currentPeriod = 1;
-let practiceRound = 1;
+let practiceRound = 1;     // 记录练习了多少轮
 let allPracticeData = [];
 let stageOrders = [];      
 let formalTrials = [];     
@@ -433,8 +478,8 @@ let periodStartTime = null;   // 记录决策思考开始时间
 let feedbackStartTime = null; // 记录看反馈开始时间
 let inFeedback = false;
 
-let quizFailCount = 0;
-let stage2QuizFailCount = 0;
+let quizFailCount = 0;       // 第一阶段前理解测试错误次数
+let stage2QuizFailCount = 0; // 第二阶段前成本变更测试错误次数
 let invalidRtCount = 0;
 let surveyScores = { q1: null, q2: null, q3: null };
 
@@ -479,7 +524,7 @@ async function assignBalancedCondition() {
     expConfig.stageCosts = seq === 'HL' ? [COST_HIGH_MARGIN, COST_LOW_MARGIN] : [COST_LOW_MARGIN, COST_HIGH_MARGIN];
 }
 
-// ================= 3. 欢迎与基本信息页 =================
+// ================= 3. 欢迎与基本信息页（含课堂准入密码校验） =================
 function renderWelcomePage() {
     studentApp.innerHTML = `
         <h2>📦 欢迎参加商业库存决策研究</h2>
@@ -487,18 +532,22 @@ function renderWelcomePage() {
             感谢您的参与！在接下来的环节中，您将扮演一名零售商户，根据市场需求分布情况做出每期的订货决策。
         </p>
         <div class="form-group">
-            <label>* 1. 您的课堂昵称（可填姓名或任意代号）：</label>
+            <label>* 1. 课堂准入密码（请填写老师在课堂上公布的密码）：</label>
+            <input type="text" inputmode="numeric" id="inp-stupwd" class="form-input" placeholder="请输入课堂密码" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label>* 2. 您的课堂昵称（可填姓名或任意代号）：</label>
             <input type="text" id="inp-nickname" class="form-input" placeholder="请输入昵称">
         </div>
         <div class="form-group">
-            <label>* 2. 您的性别：</label>
+            <label>* 3. 您的性别：</label>
             <div class="radio-group">
                 <label><input type="radio" name="gender" value="男"> 男</label>
                 <label><input type="radio" name="gender" value="女"> 女</label>
             </div>
         </div>
         <div class="form-group">
-            <label>* 3. 您的年龄：</label>
+            <label>* 4. 您的年龄：</label>
             <input type="number" id="inp-age" class="form-input" placeholder="请输入年龄" min="1" max="60">
         </div>
         <div id="welcome-err" style="color:var(--danger); font-weight:bold; text-align:center; margin-bottom:10px;"></div>
@@ -506,18 +555,45 @@ function renderWelcomePage() {
     `;
 
     document.getElementById('btnStartExp').onclick = async () => {
+        const enteredPwd = document.getElementById('inp-stupwd').value.trim();
         const nick = document.getElementById('inp-nickname').value.trim();
         const genderEl = document.querySelector('input[name="gender"]:checked');
         const ageVal = parseInt(document.getElementById('inp-age').value, 10);
         const errDiv = document.getElementById('welcome-err');
 
-        if (!nick) { errDiv.innerText = "请填写您的课堂昵称！"; return; }
-        if (!genderEl) { errDiv.innerText = "请选择您的性别！"; return; }
-        if (isNaN(ageVal) || ageVal <= 0 || ageVal > 60) { errDiv.innerText = "请输入合理的年龄（不超过60岁）！"; return; }
-
-        studentInfo = { nickname: nick, gender: genderEl.value, age: ageVal };
         const startBtn = document.getElementById('btnStartExp');
         startBtn.disabled = true;
+        startBtn.innerText = "正在校验课堂信息...";
+
+        // 再次同步最新云端密码，确保老师刚改过密码学生就能立即生效
+        await syncGlobalConfigFromCloud();
+
+        if (enteredPwd !== String(currentStudentPwd).trim()) {
+            errDiv.innerText = "❌ 课堂准入密码不正确，请核对老师公布的密码！";
+            startBtn.disabled = false;
+            startBtn.innerText = "下一步：阅读详细操作说明 ➔";
+            return;
+        }
+        if (!nick) {
+            errDiv.innerText = "请填写您的课堂昵称！";
+            startBtn.disabled = false;
+            startBtn.innerText = "下一步：阅读详细操作说明 ➔";
+            return;
+        }
+        if (!genderEl) {
+            errDiv.innerText = "请选择您的性别！";
+            startBtn.disabled = false;
+            startBtn.innerText = "下一步：阅读详细操作说明 ➔";
+            return;
+        }
+        if (isNaN(ageVal) || ageVal <= 0 || ageVal > 60) {
+            errDiv.innerText = "请输入合理的年龄（不超过60岁）！";
+            startBtn.disabled = false;
+            startBtn.innerText = "下一步：阅读详细操作说明 ➔";
+            return;
+        }
+
+        studentInfo = { nickname: nick, gender: genderEl.value, age: ageVal };
         startBtn.innerText = "正在为您分配实验场景...";
         await assignBalancedCondition();
         renderInstructions(false);
@@ -786,7 +862,6 @@ function renderGameStage() {
     `;
 
     const inp = document.getElementById('order-input-center');
-    // 实时过滤：禁止输入任何非数字字符（字母、负号、小数点统统过滤），且若超过300自动截断
     inp.addEventListener('input', function() {
         let cleaned = this.value.replace(/[^0-9]/g, '');
         if (cleaned.length > 1 && cleaned.startsWith('0')) {
@@ -826,7 +901,6 @@ function submitPeriodOrder(unitCost, maxPeriods) {
         return;
     }
 
-    // 结算本期决策反应时间 rt_ms
     const rtMs = Math.round(performance.now() - periodStartTime);
     if (currentStage > 0 && rtMs < 200) {
         invalidRtCount++;
@@ -854,7 +928,12 @@ function submitPeriodOrder(unitCost, maxPeriods) {
         demand: demand,
         profit: profit,
         rt_ms: rtMs,
-        fb_ms: 0 // 将在点击“下一期”时记录看反馈时长
+        fb_ms: 0,
+        // 附带审稿人过程控制变量（无需改动 Supabase 表结构即可随 JSON 存储与导出）
+        stage2_quiz_fail_count: stage2QuizFailCount,
+        practice_rounds: practiceRound,
+        device_type: detectDeviceType(),
+        screen_width: window.innerWidth || 0
     };
 
     if (currentStage === 0) {
@@ -863,16 +942,15 @@ function submitPeriodOrder(unitCost, maxPeriods) {
         formalTrials.push(record);
     }
 
-    // 计算当前产品截止到本期的累计总利润（两个产品严格分开计算）
     let currentStageCumProfit = 0;
     if (currentStage === 0) {
-        currentStageCumProfit = allPracticeData.filter(t => t.period <= currentPeriod).slice(-currentPeriod).reduce((a, b) => a + b.profit, 0);
+        currentStageCumProfit = allPracticeData.slice(-currentPeriod).reduce((a, b) => a + b.profit, 0);
     } else {
         currentStageCumProfit = formalTrials.filter(t => t.stage === currentStage).reduce((a, b) => a + b.profit, 0);
     }
 
     inFeedback = true;
-    feedbackStartTime = performance.now(); // 开始记录看反馈时长
+    feedbackStartTime = performance.now();
 
     document.getElementById('decision-zone').style.display = 'none';
     const fbZone = document.getElementById('feedback-zone');
@@ -903,7 +981,6 @@ function submitPeriodOrder(unitCost, maxPeriods) {
     `;
 
     document.getElementById('btnManualNext').onclick = () => {
-        // 记录看反馈持续时长 fb_ms
         record.fb_ms = Math.round(performance.now() - feedbackStartTime);
         inFeedback = false;
         currentPeriod++;
@@ -962,7 +1039,6 @@ function handleStageComplete() {
     }
 }
 
-// 第二阶段产品说明页与理解度测试第4题复现
 function renderStage2Intro() {
     const oldCost = expConfig.stageCosts[0];
     const newCost = expConfig.stageCosts[1];
@@ -1022,6 +1098,8 @@ function renderStage2Quiz() {
             return;
         }
         if (sel.value === 'c') {
+            // 将更新后的 stage2QuizFailCount 同步回写到第一阶段记录中，方便导出
+            formalTrials.forEach(t => { t.stage2_quiz_fail_count = stage2QuizFailCount; });
             currentStage = 2;
             currentPeriod = 1;
             stageOrders = [];
@@ -1105,14 +1183,13 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const padLeft = 36, padRight = 32, padTop = 18, padBottom = 26;
+    const padLeft = 36, padRight = 46, padTop = 18, padBottom = 26;
     const plotW = w - padLeft - padRight;
     const plotH = h - padTop - padBottom;
 
     const getX = (periodIdx) => padLeft + (periodIdx / 39) * plotW;
     const getY = (val) => (h - padBottom) - (val / 300) * plotH;
 
-    // 坐标轴框
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -1121,7 +1198,6 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
     ctx.lineTo(w - padRight, h - padBottom);
     ctx.stroke();
 
-    // 纵轴刻度 (0, 75, 150, 225, 300)
     ctx.fillStyle = '#64748b';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
@@ -1130,14 +1206,12 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
         ctx.fillText(String(v), padLeft - 5, y + 3);
     });
 
-    // 横轴刻度 (1, 10, 20, 30, 40期)
     ctx.textAlign = 'center';
     [1, 10, 20, 30, 40].forEach(p => {
         const x = getX(p - 1);
         ctx.fillText(String(p), x, h - padBottom + 14);
     });
 
-    // 1. 平均需求横线 150 (橙色虚线)
     const y150 = getY(150);
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 1.5;
@@ -1148,9 +1222,8 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
     ctx.stroke();
     ctx.fillStyle = '#d97706';
     ctx.textAlign = 'left';
-    ctx.fillText('均值150', w - padRight + 2, y150 + 3);
+    ctx.fillText('均值150', w - padRight + 3, y150 + 3);
 
-    // 2. 高利润最优解横线 225 (深绿虚线)
     const y225 = getY(225);
     ctx.strokeStyle = '#10b981';
     ctx.setLineDash([3, 3]);
@@ -1159,9 +1232,8 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
     ctx.lineTo(w - padRight, y225);
     ctx.stroke();
     ctx.fillStyle = '#059669';
-    ctx.fillText('q*=225', w - padRight + 2, y225 + 3);
+    ctx.fillText('q*=225', w - padRight + 3, y225 + 3);
 
-    // 3. 低利润最优解横线 75 (深红虚线)
     const y75 = getY(75);
     ctx.strokeStyle = '#f43f5e';
     ctx.setLineDash([3, 3]);
@@ -1170,11 +1242,10 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
     ctx.lineTo(w - padRight, y75);
     ctx.stroke();
     ctx.fillStyle = '#e11d48';
-    ctx.fillText('q*=75', w - padRight + 2, y75 + 3);
+    ctx.fillText('q*=75', w - padRight + 3, y75 + 3);
 
     ctx.setLineDash([]);
 
-    // 绘制高利润产品订货折线 (蓝色实线)
     if (highSeries && highSeries.length > 0) {
         ctx.strokeStyle = '#0ea5e9';
         ctx.lineWidth = 2.2;
@@ -1191,7 +1262,6 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
         ctx.stroke();
     }
 
-    // 绘制低利润产品订货折线 (红色实线)
     if (lowSeries && lowSeries.length > 0) {
         ctx.strokeStyle = '#e11d48';
         ctx.lineWidth = 2.2;
@@ -1209,7 +1279,7 @@ function drawCombined40PeriodChart(canvasId, highSeries, lowSeries) {
     }
 }
 
-// ================= 10. 个人决策报告页（已删掉“诊断”二字，同框画1~40期两条折线） =================
+// ================= 10. 个人决策报告页 =================
 async function saveAndShowReport() {
     const totalProfit = formalTrials.reduce((acc, r) => acc + r.profit, 0);
     const dissocScore = Number((((8 - surveyScores.q1) + surveyScores.q2 + surveyScores.q3) / 3).toFixed(2));
@@ -1303,7 +1373,7 @@ async function saveAndShowReport() {
     }, 60);
 }
 
-// ================= 11. 教师端控制逻辑与密码模态框 =================
+// ================= 11. 教师端控制逻辑与云端批次/密码同步 =================
 const pwdModal = document.getElementById('pwdModal');
 const pwdInput = document.getElementById('pwdInput');
 const pwdErr   = document.getElementById('pwdErr');
@@ -1358,14 +1428,47 @@ document.getElementById('btnSaveDbConfig').onclick = () => {
     document.getElementById('db-config-panel').style.display = 'none';
     loadDashboardData();
 };
-document.getElementById('btnSetSession').onclick = () => {
-    const val = document.getElementById('t-session-input').value.trim();
-    if (!val) return;
-    currentSessionId = val;
-    localStorage.setItem('exp_session_id', val);
-    document.getElementById('topSessionBadge').innerText = val;
+
+// 教师端一键同步新批次号与新学生密码到云端
+document.getElementById('btnSetSession').onclick = async () => {
+    const newSess = document.getElementById('t-session-input').value.trim();
+    const newStuPwd = document.getElementById('t-stupwd-input').value.trim();
+    if (!newSess || !newStuPwd) {
+        alert("课堂批次号和学生准入密码均不能为空！");
+        return;
+    }
+    currentSessionId = newSess;
+    currentStudentPwd = newStuPwd;
+    localStorage.setItem('exp_session_id', newSess);
+    updateTopBarDisplay();
+
+    const btn = document.getElementById('btnSetSession');
+    btn.disabled = true;
+    btn.innerText = "⏳ 正在同步到云端...";
+
+    if (supabaseClient) {
+        try {
+            await supabaseClient.from('newsvendor_experiments').insert([{
+                session_id: CONFIG_MARKER_SESSION,
+                nickname: newSess,
+                gender: newStuPwd,
+                age: 0,
+                lead_time: 0,
+                order_seq: 'CFG',
+                total_profit: 0,
+                practice_data: [],
+                trials_data: []
+            }]);
+            alert('✅ 已成功同步到云端！\n当前课堂批次：' + newSess + '\n学生准入密码：' + newStuPwd + '\n\n现在全班学生打开链接输入该密码，即可直接进入此批次！');
+        } catch (e) {
+            alert('本地批次已切换，但云端同步失败：' + e.message);
+        }
+    }
+    btn.disabled = false;
+    btn.innerText = "☁️ 同步设置到全班 / 切换课堂";
     loadDashboardData();
 };
+
 document.getElementById('btnRefreshDash').onclick = () => loadDashboardData();
 
 function calcDemandChasingCorr(trials) {
@@ -1413,10 +1516,12 @@ async function loadDashboardData() {
         const localAll = JSON.parse(localStorage.getItem('local_exp_records') || '[]');
         records = localAll.filter(r => r.session_id === currentSessionId);
     }
+    // 过滤内部配置行
+    records = records.filter(r => r.session_id !== CONFIG_MARKER_SESSION && r.order_seq !== 'CFG');
     cachedCurrentRecords = records;
 
     if (records.length === 0) {
-        sumDiv.innerHTML = '当前课堂批次 <strong>[' + currentSessionId + ']</strong> 暂无学生提交数据。';
+        sumDiv.innerHTML = '当前课堂批次 <strong>[' + currentSessionId + ']</strong>（学生准入密码: <strong>' + currentStudentPwd + '</strong>）暂无学生提交数据。';
         document.getElementById('dash-charts').style.display = 'none';
         document.getElementById('dash-stats-box').style.display = 'none';
         document.getElementById('student-tbody').innerHTML = '<tr><td colspan="9" style="color:#94a3b8;">等待学生完成...</td></tr>';
@@ -1427,7 +1532,6 @@ async function loadDashboardData() {
     document.getElementById('dash-charts').style.display = 'grid';
     document.getElementById('dash-stats-box').style.display = 'block';
 
-    // 渲染三张 LT=0, 1, 2 班级均值折线图（横坐标 1~40，高低利润分两条线同图）与底部汇总表
     const groupStatsRows = [];
     [0, 1, 2].forEach(lt => {
         const subRecs = records.filter(r => r.lead_time === lt);
@@ -1451,7 +1555,6 @@ async function loadDashboardData() {
 
         drawCombined40PeriodChart('canvas-lt' + lt, highPeriodAvgs, lowPeriodAvgs);
 
-        // 计算该组总体均值
         const validH = highPeriodAvgs.filter(v => v !== null);
         const validL = lowPeriodAvgs.filter(v => v !== null);
         const overallH = validH.length ? (validH.reduce((a,b)=>a+b,0)/validH.length).toFixed(1) : '-';
@@ -1472,7 +1575,6 @@ async function loadDashboardData() {
     });
     document.getElementById('group-stats-tbody').innerHTML = groupStatsRows.join('');
 
-    // 学生个人排行明细表
     const tbodyRows = records.map((r, idx) => {
         const trials = r.trials_data || [];
         const hTrials = trials.filter(t => t.margin_type === 'High');
@@ -1498,30 +1600,47 @@ async function loadDashboardData() {
     document.getElementById('student-tbody').innerHTML = tbodyRows.join('');
 }
 
-// 导出 CSV 长表（包含决策时长 rt_ms 与 看反馈时长 fb_ms）
+// 导出 CSV 长表（已增加 stage2_quiz_fail_count, practice_rounds, device_type, screen_width 四列）
 function exportTrialsToCSV(records, filename) {
-    if (!records || records.length === 0) { alert("暂无数据可导出！"); return; }
+    const validRecords = (records || []).filter(r => r.session_id !== CONFIG_MARKER_SESSION && r.order_seq !== 'CFG');
+    if (validRecords.length === 0) { alert("暂无有效实验数据可导出！"); return; }
+
     const headers = [
         "session_id", "participant_id", "nickname", "gender", "age",
+        "device_type", "screen_width", "practice_rounds",
         "lead_time", "order_seq", "stage", "period", "global_period",
         "margin_type", "unit_cost", "price", "order_qty", "arrival_qty",
         "demand", "profit", "decision_rt_ms", "feedback_view_ms",
         "q1_score", "q2_score", "q3_score",
-        "dissociation_score", "quiz_fail_count", "invalid_rt_count", "created_at"
+        "dissociation_score", "stage1_quiz_fail_count", "stage2_quiz_fail_count",
+        "invalid_rt_count", "created_at"
     ];
     const rows = [headers.join(",")];
-    records.forEach(r => {
-        (r.trials_data || []).forEach(t => {
+
+    validRecords.forEach(r => {
+        const trials = r.trials_data || [];
+        const pracArr = r.practice_data || [];
+        const inferredPracRounds = pracArr.length > 0 ? Math.ceil(pracArr.length / PRACTICE_PERIODS) : 1;
+        const lastTrial = trials.length > 0 ? trials[trials.length - 1] : {};
+        const s2Fails = (lastTrial.stage2_quiz_fail_count !== undefined) ? lastTrial.stage2_quiz_fail_count : 0;
+
+        trials.forEach(t => {
+            const devType = t.device_type || 'Unknown';
+            const scrW = t.screen_width || 0;
+            const pracR = t.practice_rounds || inferredPracRounds;
             rows.push([
                 '"' + r.session_id + '"', '"' + (r.id || r.nickname) + '"', '"' + r.nickname + '"', '"' + r.gender + '"', r.age,
+                '"' + devType + '"', scrW, pracR,
                 r.lead_time, '"' + r.order_seq + '"', t.stage, t.period, t.global_period,
                 '"' + t.margin_type + '"', t.unit_cost, PRICE, t.order_qty, t.arrival_qty,
                 t.demand, t.profit, t.rt_ms, (t.fb_ms || 0),
                 r.q1_score, r.q2_score, r.q3_score,
-                r.dissociation_score, r.quiz_fail_count, r.invalid_rt_count, '"' + (r.created_at || '') + '"'
+                r.dissociation_score, (r.quiz_fail_count || 0), s2Fails,
+                (r.invalid_rt_count || 0), '"' + (r.created_at || '') + '"'
             ].join(","));
         });
     });
+
     const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -1542,9 +1661,12 @@ document.getElementById('btnExportAll').onclick = async () => {
     exportTrialsToCSV(allData, 'Newsvendor_All_Sessions_' + new Date().toISOString().slice(0, 10) + '.csv');
 };
 
-// 启动初始化
-initSupabase();
-renderWelcomePage();
+// 启动初始化并同步云端最新批次与密码
+(async function boot() {
+    initSupabase();
+    renderWelcomePage();
+    await syncGlobalConfigFromCloud();
+})();
 </script>
 </body>
 </html>
