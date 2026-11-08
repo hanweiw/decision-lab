@@ -432,7 +432,7 @@ function updateTopBarDisplay() {
 }
 updateTopBarDisplay();
 
-// 从云端自动拉取老师最新设定的课堂批次号和学生准入密码
+// 从云端强制拉取老师最新设定的课堂批次号和学生准入密码（最高优先级，无视旧网址参数与缓存）
 async function syncGlobalConfigFromCloud() {
     if (!supabaseClient) return;
     try {
@@ -443,8 +443,9 @@ async function syncGlobalConfigFromCloud() {
             .order('created_at', { ascending: false })
             .limit(1);
         if (data && data.length > 0) {
-            if (!urlParams.get('session') && data[0].nickname) {
+            if (data[0].nickname) {
                 currentSessionId = data[0].nickname;
+                localStorage.setItem('exp_session_id', currentSessionId);
             }
             if (data[0].gender) {
                 currentStudentPwd = data[0].gender;
